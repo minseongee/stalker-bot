@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-from cogs.general import StockView
 import os
 import asyncio
 import dotenv
@@ -13,7 +12,6 @@ bot = commands.Bot(command_prefix=";", intents=intents)
 
 @bot.event
 async def on_ready():
-    bot.add_view(StockView())
     await bot.tree.sync()
     print(f"[Bot] {bot.user} 로그인 완료")
     print("[Bot] 슬래시 커맨드 동기화 완료")
@@ -26,6 +24,10 @@ async def main():
             if filename.endswith(".py"):
                 await bot.load_extension(f"cogs.{filename[:-3]}")
                 print(f"[Cog] {filename} 로드 완료")
+
+        # load_extension 이후에 임포트해야 같은 모듈 인스턴스를 사용함
+        from cogs.general import StockView
+        bot.add_view(StockView())
 
         await bot.start(os.getenv("DISCORD_TOKEN"))
 
