@@ -10,7 +10,7 @@ _dashboard_message: discord.Message | None = None
 
 def _build_dashboard_embed() -> discord.Embed:
     embed = discord.Embed(
-        title="주식 어시스턴트",
+        title="Stalk Bot",
         description="아래 버튼을 눌러 원하는 기능을 선택하세요.",
         color=discord.Color.blue(),
     )

@@ -13,7 +13,7 @@ bot = commands.Bot(command_prefix=";", intents=intents)
 
 @bot.event
 async def on_ready():
-    bot.add_view(StockView())  # 봇 재시작 후에도 버튼 유지
+    bot.add_view(StockView())
     await bot.tree.sync()
     print(f"[Bot] {bot.user} 로그인 완료")
     print(f"[Bot] 슬래시 커맨드 동기화 완료")
