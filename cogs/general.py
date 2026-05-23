@@ -107,8 +107,8 @@ class General(commands.Cog):
 
     @refresh_news.error
     async def on_refresh_error(self, error: Exception):
-        print("[뉴스] refresh_news 태스크 오류:")
-        traceback.print_exc()
+        print(f"[뉴스] refresh_news 태스크 오류: {error}")
+        traceback.print_exception(type(error), error, error.__traceback__)
 
     @refresh_news.before_loop
     async def before_refresh(self):
