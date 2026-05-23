@@ -1,10 +1,31 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-from datetime import datetime
 from utils.summarizer import summarize_news, get_cache_time_kst
 
 _news_embed: discord.Embed | None = None
+_news_loading: bool = False
+_dashboard_message: discord.Message | None = None
+
+
+def _build_dashboard_embed() -> discord.Embed:
+    embed = discord.Embed(
+        title="주식 어시스턴트",
+        description="아래 버튼을 눌러 원하는 기능을 선택하세요.",
+        color=discord.Color.blue(),
+    )
+    embed.add_field(name="🔍 주식 검색", value="종목 정보를 조회합니다.", inline=False)
+    embed.add_field(name="⭐ 관심 종목", value="나만의 관심 종목 목록을 관리합니다.", inline=False)
+    embed.add_field(name="📰 시장 뉴스", value="최신 주식 시장 뉴스를 확인합니다.", inline=False)
+    news_ts = get_cache_time_kst()
+    if _news_loading:
+        footer = "뉴스 갱신 중..."
+    elif news_ts:
+        footer = f"뉴스 마지막 갱신: {news_ts}"
+    else:
+        footer = "뉴스 아직 로드되지 않음"
+    embed.set_footer(text=footer)
+    return embed
 
 
 async def _build_news_embed() -> discord.Embed | None:
@@ -16,7 +37,7 @@ async def _build_news_embed() -> discord.Embed | None:
         description=summary,
         color=discord.Color.green(),
     )
-    embed.set_footer(text=f"마지막 업데이트: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    embed.set_footer(text=f"마지막 업데이트: {get_cache_time_kst()}")
     return embed
 
 
@@ -39,6 +60,11 @@ class StockView(discord.ui.View):
     @discord.ui.button(label="시장 뉴스", style=discord.ButtonStyle.secondary, emoji="📰", custom_id="stock:news")
     async def news(self, interaction: discord.Interaction, _button: discord.ui.Button):
         global _news_embed
+        if _news_loading:
+            await interaction.response.send_message(
+                "⏳ 뉴스를 갱신하는 중입니다. 잠시 후 다시 시도해주세요.", ephemeral=True
+            )
+            return
         if _news_embed is None:
             await interaction.response.defer(ephemeral=True)
             _news_embed = await _build_news_embed()
@@ -63,10 +89,24 @@ class General(commands.Cog):
 
     @tasks.loop(hours=1)
     async def refresh_news(self):
-        global _news_embed
-        embed = await _build_news_embed()
-        if embed:
-            _news_embed = embed
+        global _news_embed, _news_loading, _dashboard_message
+        _news_loading = True
+        if _dashboard_message:
+            try:
+                await _dashboard_message.edit(embed=_build_dashboard_embed())
+            except Exception:
+                pass
+        try:
+            embed = await _build_news_embed()
+            if embed:
+                _news_embed = embed
+        finally:
+            _news_loading = False
+        if _dashboard_message:
+            try:
+                await _dashboard_message.edit(embed=_build_dashboard_embed())
+            except Exception:
+                pass
 
     @refresh_news.before_loop
     async def before_refresh(self):
@@ -75,17 +115,9 @@ class General(commands.Cog):
     @app_commands.command(name="주식", description="주식 어시스턴트 대시보드를 생성합니다. (관리자 전용)")
     @app_commands.checks.has_permissions(administrator=True)
     async def stock_menu(self, interaction: discord.Interaction):
-        embed = discord.Embed(
-            title="주식 어시스턴트",
-            description="아래 버튼을 눌러 원하는 기능을 선택하세요.",
-            color=discord.Color.blue(),
-        )
-        embed.add_field(name="🔍 주식 검색", value="종목 정보를 조회합니다.", inline=False)
-        embed.add_field(name="⭐ 관심 종목", value="나만의 관심 종목 목록을 관리합니다.", inline=False)
-        embed.add_field(name="📰 시장 뉴스", value="최신 주식 시장 뉴스를 확인합니다.", inline=False)
-        news_ts = get_cache_time_kst()
-        embed.set_footer(text=f"뉴스 마지막 갱신: {news_ts}" if news_ts else "뉴스 아직 로드되지 않음")
-        await interaction.response.send_message(embed=embed, view=StockView())
+        global _dashboard_message
+        await interaction.response.send_message(embed=_build_dashboard_embed(), view=StockView())
+        _dashboard_message = await interaction.original_response()
 
     @stock_menu.error
     async def stock_menu_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):

@@ -27,7 +27,9 @@ _PROMPT = """당신은 한국 주식 시장 전문 기자입니다.
 - 주요 이슈 3~5개를 각각 2~3문장으로 설명
 - 각 이슈 앞에 이모지 불렛(예: 📌 📉 📈 💹 🏦) 사용
 - 투자자 관점에서 핵심만 간결하게
-- 한국어로 작성"""
+- 한국어로 작성
+- 마지막 줄에 오늘 검색해볼 만한 키워드 3~5개를 아래 형식으로 추가
+  형식: 🔍 오늘의 키워드: #키워드1 #키워드2 #키워드3"""
 
 
 def _load_cache() -> str | None:
@@ -53,7 +55,6 @@ def _save_cache(content: str) -> None:
 
 
 def get_cache_time_kst() -> str | None:
-    """캐시 파일에 저장된 마지막 갱신 시각을 KST 문자열로 반환. 없으면 None."""
     if not _CACHE_FILE.exists():
         return None
     try:
@@ -84,6 +85,5 @@ async def summarize_news() -> str:
     )
     result = response.output_text.strip()
     _save_cache(result)
-    ts = get_cache_time_kst()
-    print(f"[뉴스] GPT 응답 수신 완료 ({ts})")
+    print(f"[뉴스] GPT 응답 수신 완료 ({get_cache_time_kst()})")
     return result
