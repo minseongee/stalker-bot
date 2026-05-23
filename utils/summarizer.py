@@ -1,7 +1,6 @@
-import os
 from openai import AsyncOpenAI
 
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AsyncOpenAI()
 
 _PROMPT = """당신은 한국 주식 시장 전문 기자입니다.
 아래 뉴스 기사 제목 목록을 바탕으로 오늘의 시장 동향을 신문 브리핑 형식으로 작성해주세요.
@@ -19,12 +18,15 @@ _PROMPT = """당신은 한국 주식 시장 전문 기자입니다.
 
 async def summarize_news(articles: list[dict]) -> str:
     headlines = "\n".join(f"- [{a['source']}] {a['title']}" for a in articles)
-    response = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "user", "content": _PROMPT.format(headlines=headlines)}
-        ],
-        max_tokens=600,
-        temperature=0.5,
+    response = await client.responses.create(
+        model="gpt-5.4-mini",
+        input=[{"role": "user", "content": _PROMPT.format(headlines=headlines)}],
+        text={
+            "format": {"type": "text"},
+            "verbosity": "medium",
+        },
+        reasoning={"effort": "medium", "summary": "auto"},
+        tools=[],
+        store=True,
     )
-    return response.choices[0].message.content.strip()
+    return response.output_text.strip()
