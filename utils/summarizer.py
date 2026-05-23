@@ -1,4 +1,3 @@
-import asyncio
 import json
 import time
 from datetime import datetime, timezone, timedelta
@@ -6,7 +5,6 @@ from pathlib import Path
 from openai import AsyncOpenAI
 
 _client: AsyncOpenAI | None = None
-_fetch_lock = asyncio.Lock()
 
 _KST = timezone(timedelta(hours=9))
 
@@ -73,26 +71,19 @@ async def summarize_news() -> str:
         print("[뉴스] 캐시에서 불러옴 (GPT 호출 생략)")
         return cached
 
-    async with _fetch_lock:
-        # 락 대기 중 다른 코루틴이 이미 갱신했을 수 있으므로 재확인
-        cached = _load_cache()
-        if cached:
-            print("[뉴스] 캐시에서 불러옴 (락 대기 후, GPT 호출 생략)")
-            return cached
-
-        print("[뉴스] GPT 웹검색 호출 중...")
-        response = await _get_client().responses.create(
-            model="gpt-5.4-mini",
-            input=[{"role": "user", "content": _PROMPT}],
-            tools=[{"type": "web_search_preview"}],
-            include=[
-                "reasoning.encrypted_content",
-                "web_search_call.action.sources",
-            ],
-            reasoning={"effort": "medium", "summary": "auto"},
-            store=True,
-        )
-        result = response.output_text.strip()
-        _save_cache(result)
-        print(f"[뉴스] GPT 응답 수신 완료 ({get_cache_time_kst()})")
-        return result
+    print("[뉴스] GPT 웹검색 호출 중...")
+    response = await _get_client().responses.create(
+        model="gpt-5.4-mini",
+        input=[{"role": "user", "content": _PROMPT}],
+        tools=[{"type": "web_search_preview"}],
+        include=[
+            "reasoning.encrypted_content",
+            "web_search_call.action.sources",
+        ],
+        reasoning={"effort": "medium", "summary": "auto"},
+        store=True,
+    )
+    result = response.output_text.strip()
+    _save_cache(result)
+    print(f"[뉴스] GPT 응답 수신 완료 ({get_cache_time_kst()})")
+    return result
