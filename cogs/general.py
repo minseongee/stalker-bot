@@ -2,17 +2,14 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 from datetime import datetime
-from utils.news import fetch_market_news
 from utils.summarizer import summarize_news
 
 _news_embed: discord.Embed | None = None
 
 
 async def _build_news_embed() -> discord.Embed | None:
-    articles = await fetch_market_news(max_items=10)
-    if not articles:
-        return None
-    summary = await summarize_news(articles)
+    summary = await summarize_news()
+    if not summary:
     embed = discord.Embed(
         title="📰 오늘의 시장 브리핑",
         description=summary,
