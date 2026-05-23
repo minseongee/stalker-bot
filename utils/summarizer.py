@@ -1,6 +1,12 @@
+import json
+import time
+from pathlib import Path
 from openai import AsyncOpenAI
 
 client = AsyncOpenAI()
+
+_CACHE_FILE = Path(__file__).parent.parent / ".news_cache.json"
+_CACHE_TTL = 3600
 
 _PROMPT = """당신은 한국 주식 시장 전문 기자입니다.
 웹 검색을 통해 오늘의 한국 및 글로벌 시장 동향을 파악하고, 신문 브리핑 형식으로 작성해주세요.
@@ -13,7 +19,33 @@ _PROMPT = """당신은 한국 주식 시장 전문 기자입니다.
 - 한국어로 작성"""
 
 
+def _load_cache() -> str | None:
+    if not _CACHE_FILE.exists():
+        return None
+    try:
+        data = json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
+        if time.time() - data["timestamp"] < _CACHE_TTL:
+            return data["content"]
+    except Exception:
+        pass
+    return None
+
+
+def _save_cache(content: str) -> None:
+    try:
+        _CACHE_FILE.write_text(
+            json.dumps({"timestamp": time.time(), "content": content}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
 async def summarize_news() -> str:
+    cached = _load_cache()
+    if cached:
+        return cached
+
     response = await client.responses.create(
         model="gpt-5.4-mini",
         input=[{"role": "user", "content": _PROMPT}],
@@ -25,4 +57,6 @@ async def summarize_news() -> str:
         reasoning={"effort": "medium", "summary": "auto"},
         store=True,
     )
-    return response.output_text.strip()
+    result = response.output_text.strip()
+    _save_cache(result)
+    return result

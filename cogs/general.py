@@ -10,6 +10,7 @@ _news_embed: discord.Embed | None = None
 async def _build_news_embed() -> discord.Embed | None:
     summary = await summarize_news()
     if not summary:
+        return None
     embed = discord.Embed(
         title="📰 오늘의 시장 브리핑",
         description=summary,
