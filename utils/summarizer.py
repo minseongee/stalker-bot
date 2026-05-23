@@ -54,6 +54,10 @@ def _save_cache(content: str) -> None:
         pass
 
 
+def get_cached_news() -> str | None:
+    return _load_cache()
+
+
 def get_cache_time_kst() -> str | None:
     if not _CACHE_FILE.exists():
         return None

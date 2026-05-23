@@ -2,7 +2,7 @@ import traceback
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-from utils.summarizer import summarize_news, get_cache_time_kst
+from utils.summarizer import summarize_news, get_cached_news, get_cache_time_kst
 
 _news_embed: discord.Embed | None = None
 _news_loading: bool = False
@@ -73,6 +73,17 @@ class General(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
+        global _news_embed
+        cached = get_cached_news()
+        if cached:
+            embed = discord.Embed(
+                title="📰 오늘의 시장 브리핑",
+                description=cached,
+                color=discord.Color.green(),
+            )
+            embed.set_footer(text=f"마지막 업데이트: {get_cache_time_kst()}")
+            _news_embed = embed
+            print("[뉴스] 캐시에서 _news_embed 사전 로드 완료")
         self.refresh_news.start()
 
     def cog_unload(self):
