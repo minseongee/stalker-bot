@@ -25,7 +25,6 @@ async def main():
                 await bot.load_extension(f"cogs.{filename[:-3]}")
                 print(f"[Cog] {filename} 로드 완료")
 
-        # load_extension 이후에 임포트해야 같은 모듈 인스턴스를 사용함
         from cogs.general import StockView
         bot.add_view(StockView())
 
