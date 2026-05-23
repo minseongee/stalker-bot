@@ -60,6 +60,7 @@ class StockView(discord.ui.View):
 
     @discord.ui.button(label="시장 뉴스", style=discord.ButtonStyle.secondary, emoji="📰", custom_id="stock:news")
     async def news(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        print(f"[버튼] _news_loading={_news_loading}, _news_embed={'있음' if _news_embed is not None else 'None'}, id(globals)={id(globals())}")
         if _news_loading or _news_embed is None:
             await interaction.response.send_message(
                 "⏳ 뉴스를 갱신하는 중입니다. 잠시 후 다시 시도해주세요.", ephemeral=True
@@ -102,7 +103,7 @@ class General(commands.Cog):
             embed = await _build_news_embed()
             if embed:
                 _news_embed = embed
-                print("[뉴스] _news_embed 설정 완료")
+                print(f"[뉴스] _news_embed 설정 완료, id(globals)={id(globals())}")
             else:
                 print("[뉴스] embed 생성 실패 — summary가 비어있음")
         except Exception:
