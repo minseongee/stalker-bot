@@ -1,0 +1,19 @@
+[project]
+name = "stalker-bot"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Minseong Kim",email = "mytheong@knu.ac.kr"},
+    {name = "Dohyun Kim",email = "dhyunn7416@gmail.com"}
+]
+requires-python = ">=3.14"
+dependencies = [
+    "discord-py (>=2.7.1,<3.0.0)",
+    "python-dotenv (>=1.2.2,<2.0.0)",
+    "openai (>=2.38.0,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

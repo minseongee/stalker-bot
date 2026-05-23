@@ -16,7 +16,7 @@ async def on_ready():
     bot.add_view(StockView())
     await bot.tree.sync()
     print(f"[Bot] {bot.user} 로그인 완료")
-    print(f"[Bot] 슬래시 커맨드 동기화 완료")
+    print("[Bot] 슬래시 커맨드 동기화 완료")
     print(f"[Bot] 서버 수: {len(bot.guilds)}")
 
 
