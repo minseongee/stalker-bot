@@ -1,3 +1,4 @@
+import traceback
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -90,6 +91,12 @@ class General(commands.Cog):
             embed = await _build_news_embed()
             if embed:
                 _news_embed = embed
+                print("[뉴스] _news_embed 설정 완료")
+            else:
+                print("[뉴스] embed 생성 실패 — summary가 비어있음")
+        except Exception:
+            print("[뉴스] refresh_news 오류:")
+            traceback.print_exc()
         finally:
             _news_loading = False
         if _dashboard_message:
@@ -97,6 +104,11 @@ class General(commands.Cog):
                 await _dashboard_message.edit(embed=_build_dashboard_embed())
             except Exception:
                 pass
+
+    @refresh_news.error
+    async def on_refresh_error(self, error: Exception):
+        print("[뉴스] refresh_news 태스크 오류:")
+        traceback.print_exc()
 
     @refresh_news.before_loop
     async def before_refresh(self):
