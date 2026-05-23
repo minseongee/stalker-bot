@@ -3,7 +3,15 @@ import time
 from pathlib import Path
 from openai import AsyncOpenAI
 
-client = AsyncOpenAI()
+_client: AsyncOpenAI | None = None
+
+
+def _get_client() -> AsyncOpenAI:
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI()
+    return _client
+
 
 _CACHE_FILE = Path(__file__).parent.parent / ".news_cache.json"
 _CACHE_TTL = 3600
@@ -46,7 +54,7 @@ async def summarize_news() -> str:
     if cached:
         return cached
 
-    response = await client.responses.create(
+    response = await _get_client().responses.create(
         model="gpt-5.4-mini",
         input=[{"role": "user", "content": _PROMPT}],
         tools=[{"type": "web_search_preview"}],
