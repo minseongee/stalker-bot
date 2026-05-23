@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 from datetime import datetime
-from utils.summarizer import summarize_news
+from utils.summarizer import summarize_news, get_cache_time_kst
 
 _news_embed: discord.Embed | None = None
 
@@ -83,6 +83,8 @@ class General(commands.Cog):
         embed.add_field(name="🔍 주식 검색", value="종목 정보를 조회합니다.", inline=False)
         embed.add_field(name="⭐ 관심 종목", value="나만의 관심 종목 목록을 관리합니다.", inline=False)
         embed.add_field(name="📰 시장 뉴스", value="최신 주식 시장 뉴스를 확인합니다.", inline=False)
+        news_ts = get_cache_time_kst()
+        embed.set_footer(text=f"뉴스 마지막 갱신: {news_ts}" if news_ts else "뉴스 아직 로드되지 않음")
         await interaction.response.send_message(embed=embed, view=StockView())
 
     @stock_menu.error

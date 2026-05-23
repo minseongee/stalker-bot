@@ -1,9 +1,12 @@
 import json
 import time
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from openai import AsyncOpenAI
 
 _client: AsyncOpenAI | None = None
+
+_KST = timezone(timedelta(hours=9))
 
 
 def _get_client() -> AsyncOpenAI:
@@ -49,11 +52,25 @@ def _save_cache(content: str) -> None:
         pass
 
 
+def get_cache_time_kst() -> str | None:
+    """캐시 파일에 저장된 마지막 갱신 시각을 KST 문자열로 반환. 없으면 None."""
+    if not _CACHE_FILE.exists():
+        return None
+    try:
+        data = json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
+        dt = datetime.fromtimestamp(data["timestamp"], tz=_KST)
+        return dt.strftime("%Y-%m-%d %H:%M KST")
+    except Exception:
+        return None
+
+
 async def summarize_news() -> str:
     cached = _load_cache()
     if cached:
+        print("[뉴스] 캐시에서 불러옴 (GPT 호출 생략)")
         return cached
 
+    print("[뉴스] GPT 웹검색 호출 중...")
     response = await _get_client().responses.create(
         model="gpt-5.4-mini",
         input=[{"role": "user", "content": _PROMPT}],
@@ -67,4 +84,6 @@ async def summarize_news() -> str:
     )
     result = response.output_text.strip()
     _save_cache(result)
+    ts = get_cache_time_kst()
+    print(f"[뉴스] GPT 응답 수신 완료 ({ts})")
     return result
