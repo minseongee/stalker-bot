@@ -7,25 +7,25 @@ class StockView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="주식 검색", style=discord.ButtonStyle.primary, emoji="🔍")
+    @discord.ui.button(label="주식 검색", style=discord.ButtonStyle.primary, emoji="🔍", custom_id="stock:search")
     async def search_stock(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await interaction.response.send_message(
             "검색할 종목 티커를 입력해주세요. (예: AAPL, TSLA, 005930)", ephemeral=True
         )
 
-    @discord.ui.button(label="관심 종목", style=discord.ButtonStyle.secondary, emoji="⭐")
+    @discord.ui.button(label="관심 종목", style=discord.ButtonStyle.secondary, emoji="⭐", custom_id="stock:watchlist")
     async def watchlist(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await interaction.response.send_message(
             "관심 종목 기능은 준비 중입니다.", ephemeral=True
         )
 
-    @discord.ui.button(label="포트폴리오", style=discord.ButtonStyle.secondary, emoji="📊")
+    @discord.ui.button(label="포트폴리오", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="stock:portfolio")
     async def portfolio(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await interaction.response.send_message(
             "포트폴리오 기능은 준비 중입니다.", ephemeral=True
         )
 
-    @discord.ui.button(label="시장 뉴스", style=discord.ButtonStyle.secondary, emoji="📰")
+    @discord.ui.button(label="시장 뉴스", style=discord.ButtonStyle.secondary, emoji="📰", custom_id="stock:news")
     async def news(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await interaction.response.send_message(
             "시장 뉴스 기능은 준비 중입니다.", ephemeral=True
