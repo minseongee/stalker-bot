@@ -36,7 +36,8 @@ class General(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="주식", description="주식 어시스턴트 메뉴를 엽니다.")
+    @app_commands.command(name="주식", description="주식 어시스턴트 대시보드를 생성합니다. (관리자 전용)")
+    @app_commands.checks.has_permissions(administrator=True)
     async def stock_menu(self, interaction: discord.Interaction):
         embed = discord.Embed(
             title="주식 어시스턴트",
@@ -47,7 +48,12 @@ class General(commands.Cog):
         embed.add_field(name="⭐ 관심 종목", value="나만의 관심 종목 목록을 관리합니다.", inline=False)
         embed.add_field(name="📊 포트폴리오", value="보유 종목 및 수익률을 확인합니다.", inline=False)
         embed.add_field(name="📰 시장 뉴스", value="최신 주식 시장 뉴스를 확인합니다.", inline=False)
-        await interaction.response.send_message(embed=embed, view=StockView(), ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=StockView())
+
+    @stock_menu.error
+    async def stock_menu_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message("이 명령어는 서버 관리자만 사용할 수 있습니다.", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_ready(self):
