@@ -1,7 +1,25 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
+from datetime import datetime
 from utils.news import fetch_market_news
+from utils.summarizer import summarize_news
+
+_news_embed: discord.Embed | None = None
+
+
+async def _build_news_embed() -> discord.Embed | None:
+    articles = await fetch_market_news(max_items=10)
+    if not articles:
+        return None
+    summary = await summarize_news(articles)
+    embed = discord.Embed(
+        title="📰 오늘의 시장 브리핑",
+        description=summary,
+        color=discord.Color.green(),
+    )
+    embed.set_footer(text=f"마지막 업데이트: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    return embed
 
 
 class StockView(discord.ui.View):
@@ -22,23 +40,39 @@ class StockView(discord.ui.View):
 
     @discord.ui.button(label="시장 뉴스", style=discord.ButtonStyle.secondary, emoji="📰", custom_id="stock:news")
     async def news(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        articles = await fetch_market_news(max_items=5)
-        if not articles:
+        global _news_embed
+        if _news_embed is None:
+            await interaction.response.defer(ephemeral=True)
+            _news_embed = await _build_news_embed()
+        if _news_embed is None:
             await interaction.followup.send("뉴스를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.", ephemeral=True)
             return
-        lines = [f"{i}. [{a['title'][:100]}]({a['link']}) — {a['source']}" for i, a in enumerate(articles, 1)]
-        embed = discord.Embed(
-            title="📰 최신 시장 뉴스",
-            description="\n\n".join(lines),
-            color=discord.Color.green(),
-        )
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        if not interaction.response.is_done():
+            await interaction.response.send_message(embed=_news_embed, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=_news_embed, ephemeral=True)
 
 
 class General(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+
+    async def cog_load(self):
+        self.refresh_news.start()
+
+    def cog_unload(self):
+        self.refresh_news.cancel()
+
+    @tasks.loop(hours=1)
+    async def refresh_news(self):
+        global _news_embed
+        embed = await _build_news_embed()
+        if embed:
+            _news_embed = embed
+
+    @refresh_news.before_loop
+    async def before_refresh(self):
+        await self.bot.wait_until_ready()
 
     @app_commands.command(name="주식", description="주식 어시스턴트 대시보드를 생성합니다. (관리자 전용)")
     @app_commands.checks.has_permissions(administrator=True)
