@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
+from utils.news import fetch_market_news
 
 
 class StockView(discord.ui.View):
@@ -19,17 +20,20 @@ class StockView(discord.ui.View):
             "관심 종목 기능은 준비 중입니다.", ephemeral=True
         )
 
-    @discord.ui.button(label="포트폴리오", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="stock:portfolio")
-    async def portfolio(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        await interaction.response.send_message(
-            "포트폴리오 기능은 준비 중입니다.", ephemeral=True
-        )
-
     @discord.ui.button(label="시장 뉴스", style=discord.ButtonStyle.secondary, emoji="📰", custom_id="stock:news")
     async def news(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        await interaction.response.send_message(
-            "시장 뉴스 기능은 준비 중입니다.", ephemeral=True
+        await interaction.response.defer(ephemeral=True)
+        articles = await fetch_market_news(max_items=5)
+        if not articles:
+            await interaction.followup.send("뉴스를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.", ephemeral=True)
+            return
+        lines = [f"{i}. [{a['title'][:100]}]({a['link']}) — {a['source']}" for i, a in enumerate(articles, 1)]
+        embed = discord.Embed(
+            title="📰 최신 시장 뉴스",
+            description="\n\n".join(lines),
+            color=discord.Color.green(),
         )
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 class General(commands.Cog):
@@ -46,7 +50,6 @@ class General(commands.Cog):
         )
         embed.add_field(name="🔍 주식 검색", value="종목 정보를 조회합니다.", inline=False)
         embed.add_field(name="⭐ 관심 종목", value="나만의 관심 종목 목록을 관리합니다.", inline=False)
-        embed.add_field(name="📊 포트폴리오", value="보유 종목 및 수익률을 확인합니다.", inline=False)
         embed.add_field(name="📰 시장 뉴스", value="최신 주식 시장 뉴스를 확인합니다.", inline=False)
         await interaction.response.send_message(embed=embed, view=StockView())
 
