@@ -117,8 +117,9 @@ async def fetch_chart(code: str) -> tuple[io.BytesIO, dict] | None:
             timeout=aiohttp.ClientTimeout(total=15),
         ) as resp:
             if resp.status != 200:
-                body = await resp.text()
-                raise ChartAPIError(f"quickchart.io {resp.status}: {body[:200]}")
+                body = await resp.read()
+                body_text = body.decode("utf-8", errors="replace")[:200]
+                raise ChartAPIError(f"quickchart.io {resp.status}: {body_text}")
             data = await resp.read()
 
     buf = io.BytesIO(data)
