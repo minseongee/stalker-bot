@@ -16,6 +16,7 @@ from .database import (
     get_channels,
     init_db,
     save_channel,
+    validate_token,
 )
 from .models import (
     ChannelDeleteRequest,
@@ -73,10 +74,22 @@ def issue_token(req: TokenRequest):
     )
 
 
+@app.get("/channels/me", response_model=list[ChannelResponse])
+def my_channels(token: str, code: str | None = None):
+    """웹 에디터가 호출 — 내 채널 목록 조회 (토큰 소모 없음)."""
+    user_id = validate_token(token)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="토큰이 유효하지 않거나 만료됐습니다.")
+    rows = get_channels(user_id)
+    if code:
+        rows = [r for r in rows if r["stock_code"] == code.upper()]
+    return [ChannelResponse(**r) for r in rows]
+
+
 @app.post("/channels", response_model=ChannelResponse)
 def save_channel_endpoint(req: ChannelSaveRequest):
     """웹 에디터가 호출 — 채널 좌표를 저장."""
-    user_id = consume_token(req.token)
+    user_id = validate_token(req.token)
     if user_id is None:
         raise HTTPException(status_code=401, detail="토큰이 유효하지 않거나 만료됐습니다.")
 
@@ -103,7 +116,7 @@ def list_channels(user_id: str):
 @app.delete("/channels")
 def delete_channel_endpoint(req: ChannelDeleteRequest):
     """웹 에디터가 호출 — 채널 삭제."""
-    user_id = consume_token(req.token)
+    user_id = validate_token(req.token)
     if user_id is None:
         raise HTTPException(status_code=401, detail="토큰이 유효하지 않거나 만료됐습니다.")
     if not delete_channel(req.channel_id, user_id):

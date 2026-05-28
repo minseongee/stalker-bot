@@ -65,8 +65,8 @@ def create_token(token: str, user_id: str, ttl_seconds: int = 600) -> None:
         )
 
 
-def consume_token(token: str) -> str | None:
-    """토큰 검증 후 user_id 반환. 만료됐거나 없으면 None."""
+def validate_token(token: str) -> str | None:
+    """토큰 유효성 검사 후 user_id 반환. 토큰은 소모하지 않음."""
     now = int(time.time())
     with _conn() as conn:
         row = conn.execute(
@@ -74,8 +74,17 @@ def consume_token(token: str) -> str | None:
         ).fetchone()
         if row is None or row["expires_at"] < now:
             return None
-        conn.execute("DELETE FROM tokens WHERE token = ?", (token,))
         return row["user_id"]
+
+
+def consume_token(token: str) -> str | None:
+    """토큰 검증 후 user_id 반환 + 토큰 삭제 (1회 소모)."""
+    user_id = validate_token(token)
+    if user_id is None:
+        return None
+    with _conn() as conn:
+        conn.execute("DELETE FROM tokens WHERE token = ?", (token,))
+    return user_id
 
 
 # ── channels ─────────────────────────────────────────────────────────────────
