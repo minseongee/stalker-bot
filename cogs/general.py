@@ -56,9 +56,9 @@ class StockSearchModal(discord.ui.Modal, title="주식 차트 조회"):
         raw = self.code.value.strip()
         try:
             result = await fetch_chart(raw)
-        except ChartAPIError as e:
+        except Exception as e:
             await interaction.followup.send(
-                f"⚠️ 차트 이미지를 가져오는 데 실패했습니다. 잠시 후 다시 시도해주세요.\n```{e}```",
+                f"⚠️ 차트 이미지를 가져오는 데 실패했습니다. 잠시 후 다시 시도해주세요.\n```{type(e).__name__}: {e}```",
                 ephemeral=True,
             )
             return
