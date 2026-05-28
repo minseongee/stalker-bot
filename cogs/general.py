@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 from utils.summarizer import summarize_news, get_cached_news, get_cache_time_kst
-from utils.chart import fetch_chart, supported_codes, ChartAPIError
+from utils.chart import fetch_chart, supported_codes
 
 _news_embed: discord.Embed | None = None
 _news_loading: bool = False

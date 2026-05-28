@@ -26,7 +26,6 @@ async def main():
                 print(f"[Cog] {filename} 로드 완료")
         from cogs.general import StockView
         bot.add_view(StockView())
-
         await bot.start(os.getenv("DISCORD_TOKEN"))
 
 
