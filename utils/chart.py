@@ -37,7 +37,7 @@ def _gen_ohlcv(base_price: int, days: int = 20) -> list[dict]:
         high = max(open_p, price) * (1 + abs(random.gauss(0, 0.007)))
         low = min(open_p, price) * (1 - abs(random.gauss(0, 0.007)))
         records.append({
-            "x": int(date.timestamp()) * 1000,
+            "x": date.strftime("%Y-%m-%d"),
             "o": round(open_p),
             "h": round(high),
             "l": round(low),
