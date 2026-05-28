@@ -87,8 +87,15 @@ def _build_chart_config(name: str, code: str, candles: list[dict]) -> dict:
     }
 
 
+class ChartAPIError(Exception):
+    """quickchart.io 호출 실패 시 발생."""
+
+
 async def fetch_chart(code: str) -> tuple[io.BytesIO, dict] | None:
-    """더미 OHLCV로 캔들스틱 차트 이미지와 종목 요약을 반환합니다."""
+    """더미 OHLCV로 캔들스틱 차트 이미지와 종목 요약을 반환합니다.
+
+    Returns None if code is unknown; raises ChartAPIError on API failure.
+    """
     info = DUMMY_STOCKS.get(code)
     if not info:
         return None
@@ -110,7 +117,8 @@ async def fetch_chart(code: str) -> tuple[io.BytesIO, dict] | None:
             timeout=aiohttp.ClientTimeout(total=15),
         ) as resp:
             if resp.status != 200:
-                return None
+                body = await resp.text()
+                raise ChartAPIError(f"quickchart.io {resp.status}: {body[:200]}")
             data = await resp.read()
 
     buf = io.BytesIO(data)

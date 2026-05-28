@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 from utils.summarizer import summarize_news, get_cached_news, get_cache_time_kst
-from utils.chart import fetch_chart, supported_codes
+from utils.chart import fetch_chart, supported_codes, ChartAPIError
 
 _news_embed: discord.Embed | None = None
 _news_loading: bool = False
@@ -54,7 +54,14 @@ class StockSearchModal(discord.ui.Modal, title="주식 차트 조회"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
         raw = self.code.value.strip()
-        result = await fetch_chart(raw)
+        try:
+            result = await fetch_chart(raw)
+        except ChartAPIError as e:
+            await interaction.followup.send(
+                f"⚠️ 차트 이미지를 가져오는 데 실패했습니다. 잠시 후 다시 시도해주세요.\n```{e}```",
+                ephemeral=True,
+            )
+            return
         if result is None:
             await interaction.followup.send(
                 f"❌ `{raw}` 종목을 찾을 수 없습니다.\n\n**지원 종목**\n{supported_codes()}",
