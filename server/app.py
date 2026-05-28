@@ -40,7 +40,7 @@ def issue_token(req: TokenRequest):
     create_token(token, req.user_id, ttl_seconds=TOKEN_TTL)
     return TokenResponse(
         token=token,
-        editor_url=f"{BASE_URL}/editor?token={token}&code={req.user_id}",
+        editor_url=f"{BASE_URL}/editor?token={token}&code={req.stock_code.upper()}",
         expires_in=TOKEN_TTL,
     )
 
