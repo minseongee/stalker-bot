@@ -1,9 +1,14 @@
 import os
 import secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
+from .ohlcv import gen_ohlcv
 from .database import (
     consume_token,
     create_token,
@@ -31,6 +36,29 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Stalker Bot API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+_STATIC = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=_STATIC), name="static")
+
+
+@app.get("/editor")
+def editor_page():
+    return FileResponse(_STATIC / "editor.html")
+
+
+@app.get("/ohlcv/{code}")
+def ohlcv(code: str, days: int = 90):
+    data = gen_ohlcv(code.upper(), days)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"{code} 종목을 찾을 수 없습니다.")
+    return data
 
 
 @app.post("/token", response_model=TokenResponse)

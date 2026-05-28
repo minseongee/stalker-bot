@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>채널 에디터</title>
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1e2329; color: #e0e0e0;
+      font-family: 'Nanum Gothic', 'Apple SD Gothic Neo', sans-serif;
+      height: 100vh; display: flex; flex-direction: column;
+      user-select: none;
+    }
+
+    #toolbar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px; background: #252c35;
+      border-bottom: 1px solid #2a3040; flex-shrink: 0;
+    }
+    #stock-title { font-weight: bold; font-size: 15px; color: #fff; margin-right: 4px; }
+
+    button {
+      padding: 5px 13px; border: none; border-radius: 4px;
+      cursor: pointer; font-size: 13px; font-weight: bold; transition: opacity .15s;
+    }
+    button:hover { opacity: .85; }
+    #btn-draw  { background: #2196F3; color: #fff; }
+    #btn-draw.active { background: #f44336; }
+    #btn-save  { background: #4caf50; color: #fff; }
+    #btn-save:disabled { background: #444; color: #888; cursor: not-allowed; }
+    #btn-reset { background: #3a3f4b; color: #ccc; }
+
+    #status { margin-left: auto; font-size: 12px; color: #aaa; white-space: nowrap; }
+
+    #chart-wrapper { position: relative; flex: 1; min-height: 0; }
+    #chart { width: 100%; height: 100%; }
+    #overlay {
+      position: absolute; top: 0; left: 0;
+      pointer-events: none; /* 기본: 차트가 마우스 이벤트 수신 */
+    }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <span id="stock-title">로딩 중…</span>
+  <button id="btn-draw">채널 그리기</button>
+  <button id="btn-save" disabled>저장</button>
+  <button id="btn-reset">초기화</button>
+  <span id="status">차트를 불러오는 중…</span>
+</div>
+
+<div id="chart-wrapper">
+  <div id="chart"></div>
+  <canvas id="overlay"></canvas>
+</div>
+
+<script>
+// ── URL 파라미터 ──────────────────────────────────────────────────────────
+const params = new URLSearchParams(location.search);
+const TOKEN  = params.get('token') ?? '';
+const CODE   = params.get('code')  ?? '';
+
+// ── DOM ──────────────────────────────────────────────────────────────────
+const btnDraw  = document.getElementById('btn-draw');
+const btnSave  = document.getElementById('btn-save');
+const btnReset = document.getElementById('btn-reset');
+const statusEl = document.getElementById('status');
+const titleEl  = document.getElementById('stock-title');
+const wrapper  = document.getElementById('chart-wrapper');
+const canvas   = document.getElementById('overlay');
+const ctx      = canvas.getContext('2d');
+
+// ── 상태 ─────────────────────────────────────────────────────────────────
+// 'idle' → 'p1' → 'p2' → 'offset' → 'done'
+let state    = 'idle';
+let p1       = null;   // { time: string, price: number }
+let p2       = null;
+let offsetY  = 0;      // 하단 채널 오프셋 (원, 음수 = 아래)
+let mouseY   = null;   // offset 미리보기용 픽셀 Y
+
+// ── Lightweight Charts 초기화 ──────────────────────────────────────────
+const chart = LightweightCharts.createChart(document.getElementById('chart'), {
+  layout: { background: { color: '#1e2329' }, textColor: '#a0a0a0' },
+  grid:   { vertLines: { color: '#2a3040' }, horzLines: { color: '#2a3040' } },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  timeScale: { borderColor: '#2a3040', timeVisible: false },
+  rightPriceScale: { borderColor: '#2a3040' },
+  width:  wrapper.clientWidth,
+  height: wrapper.clientHeight,
+});
+
+const series = chart.addCandlestickSeries({
+  upColor: '#ef5350', downColor: '#26a69a',
+  borderUpColor: '#ef5350', borderDownColor: '#26a69a',
+  wickUpColor:   '#ef5350', wickDownColor:   '#26a69a',
+});
+
+// ── 캔버스 크기 동기화 ────────────────────────────────────────────────
+function syncSize() {
+  canvas.width  = wrapper.clientWidth;
+  canvas.height = wrapper.clientHeight;
+  chart.resize(wrapper.clientWidth, wrapper.clientHeight);
+  drawCanvas();
+}
+new ResizeObserver(syncSize).observe(wrapper);
+chart.timeScale().subscribeVisibleTimeRangeChange(drawCanvas);
+
+// ── OHLCV 데이터 로드 ────────────────────────────────────────────────
+fetch(`/ohlcv/${CODE}`)
+  .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
+  .then(data => {
+    series.setData(data);
+    chart.timeScale().fitContent();
+    titleEl.textContent = `${CODE} 채널 에디터`;
+    setStatus('① [채널 그리기]를 누르고 추세선 시작점을 클릭하세요.');
+  })
+  .catch(() => setStatus('❌ 데이터 로드 실패 — 종목 코드를 확인하세요.'));
+
+// ── 버튼 ─────────────────────────────────────────────────────────────
+btnDraw.addEventListener('click', () => {
+  if (state === 'idle' || state === 'done') {
+    resetDraw();
+    state = 'p1';
+    canvas.style.pointerEvents = 'all';
+    btnDraw.textContent = '취소';
+    btnDraw.classList.add('active');
+    setStatus('① 추세선 시작점(P1)을 클릭하세요.');
+  } else {
+    resetDraw();
+  }
+});
+
+btnReset.addEventListener('click', resetDraw);
+btnSave.addEventListener('click', saveChannel);
+
+// ── 캔버스 클릭 ───────────────────────────────────────────────────────
+canvas.addEventListener('click', e => {
+  const { x, y } = clientToCanvas(e);
+
+  if (state === 'p1') {
+    const pt = canvasToChart(x, y);
+    if (!pt) return;
+    p1 = pt;
+    state = 'p2';
+    setStatus('② 추세선 끝점(P2)을 클릭하세요.');
+    drawCanvas();
+
+  } else if (state === 'p2') {
+    const pt = canvasToChart(x, y);
+    if (!pt) return;
+    if (pt.time === p1.time) return; // 같은 시간이면 무시
+    p2 = pt;
+    state = 'offset';
+    canvas.style.cursor = 'ns-resize';
+    setStatus('③ 마우스를 위아래로 움직여 하단 채널 위치를 정하고 클릭하세요.');
+    drawCanvas();
+
+  } else if (state === 'offset') {
+    // 현재 마우스 Y → price 차이를 offsetY로 저장
+    const upperPriceHere = priceOnUpperLine(y);
+    const clickPrice     = series.coordinateToPrice(y);
+    if (upperPriceHere === null || clickPrice === null) return;
+    offsetY = clickPrice - upperPriceHere;
+    state   = 'done';
+    canvas.style.cursor  = 'default';
+    canvas.style.pointerEvents = 'none';
+    btnDraw.textContent  = '채널 그리기';
+    btnDraw.classList.remove('active');
+    btnSave.disabled     = false;
+    setStatus(`✅ 채널 완성 (오프셋 ${offsetY.toFixed(0)}원) — [저장]을 눌러 등록하세요.`);
+    drawCanvas();
+  }
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (state !== 'offset') return;
+  const { y } = clientToCanvas(e);
+  mouseY = y;
+  drawCanvas();
+});
+
+// ── 좌표 변환 헬퍼 ───────────────────────────────────────────────────
+function clientToCanvas(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function canvasToChart(x, y) {
+  const time  = chart.timeScale().coordinateToTime(x);
+  const price = series.coordinateToPrice(y);
+  if (time === null || price === null) return null;
+  return { time, price };
+}
+
+/** 상단 추세선 위에서 픽셀 Y = yPx 에 해당하는 가격 계산 */
+function priceOnUpperLine(yPx) {
+  if (!p1 || !p2) return null;
+  // 상단선: P1-P2 를 잇는 직선 → 기울기(price/px)로 역산
+  const x1 = chart.timeScale().timeToCoordinate(p1.time);
+  const y1 = series.priceToCoordinate(p1.price);
+  const x2 = chart.timeScale().timeToCoordinate(p2.time);
+  const y2 = series.priceToCoordinate(p2.price);
+  if (x1 === null || y1 === null || x2 === null || y2 === null) return null;
+
+  // yPx 에서의 x를 구하지 않아도 됨 — 그냥 mouseY의 price를 읽으면 됨
+  // (평행선이므로 어느 x에서든 price 차이는 같음)
+  return series.coordinateToPrice(yPx - 0); // 실질적으로 mouseY의 price
+}
+
+// ── 캔버스 렌더링 ────────────────────────────────────────────────────
+function drawCanvas() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!p1) return;
+
+  const x1 = chart.timeScale().timeToCoordinate(p1.time);
+  const y1 = series.priceToCoordinate(p1.price);
+  if (x1 === null || y1 === null) return;
+  drawDot(x1, y1);
+
+  if (!p2) return;
+
+  const x2 = chart.timeScale().timeToCoordinate(p2.time);
+  const y2 = series.priceToCoordinate(p2.price);
+  if (x2 === null || y2 === null) return;
+  drawDot(x2, y2);
+
+  // 상단 추세선
+  extendLine(x1, y1, x2, y2, '#4fc3f7', false);
+
+  // 하단 채널
+  if (state === 'offset' && mouseY !== null) {
+    // 미리보기: 마우스 Y와 상단선 사이 픽셀 차이 사용
+    const upperAtMouse = getYOnLine(x1, y1, x2, y2, x1); // 기준점의 상단 Y
+    const dy = mouseY - y1; // 마우스가 P1 기준으로 얼마나 아래인지
+    extendLine(x1, y1 + dy, x2, y2 + dy, '#4fc3f7', true);
+  } else if (state === 'done') {
+    const pxOff = priceDiffToPx(offsetY, p1.price);
+    if (pxOff !== null) extendLine(x1, y1 + pxOff, x2, y2 + pxOff, '#4fc3f7', true);
+  }
+}
+
+/** 가격 차이(원) → 픽셀 차이 변환 (현재 스케일 기준) */
+function priceDiffToPx(priceDiff, refPrice) {
+  const refPx  = series.priceToCoordinate(refPrice);
+  const offPx  = series.priceToCoordinate(refPrice + priceDiff);
+  if (refPx === null || offPx === null) return null;
+  return offPx - refPx; // 양수 = 아래 방향
+}
+
+function getYOnLine(x1, y1, x2, y2, x) {
+  if (x2 === x1) return y1;
+  return y1 + (y2 - y1) * (x - x1) / (x2 - x1);
+}
+
+function extendLine(x1, y1, x2, y2, color, dashed) {
+  if (x1 === x2) return;
+  const slope  = (y2 - y1) / (x2 - x1);
+  const yLeft  = y1 - slope * x1;
+  const yRight = y1 + slope * (canvas.width - x1);
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 2;
+  ctx.globalAlpha = 0.9;
+  ctx.setLineDash(dashed ? [8, 5] : []);
+  ctx.beginPath();
+  ctx.moveTo(0, yLeft);
+  ctx.lineTo(canvas.width, yRight);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawDot(x, y) {
+  ctx.save();
+  ctx.fillStyle   = '#4fc3f7';
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth   = 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── 저장 ─────────────────────────────────────────────────────────────
+async function saveChannel() {
+  if (!p1 || !p2) return;
+  btnSave.disabled = true;
+  setStatus('저장 중…');
+
+  const toTs = t => typeof t === 'number' ? t : new Date(t + 'T00:00:00Z').getTime() / 1000;
+
+  try {
+    const res = await fetch('/channels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token:     TOKEN,
+        stock_code: CODE,
+        p1_ts:    toTs(p1.time),
+        p1_price: p1.price,
+        p2_ts:    toTs(p2.time),
+        p2_price: p2.price,
+        offset_y: offsetY,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail ?? `HTTP ${res.status}`);
+    }
+    setStatus('✅ 채널이 저장됐습니다! 이 창을 닫으세요.');
+  } catch (e) {
+    setStatus(`❌ 저장 실패: ${e.message}`);
+    btnSave.disabled = false;
+  }
+}
+
+// ── 초기화 ───────────────────────────────────────────────────────────
+function resetDraw() {
+  state   = 'idle';
+  p1 = p2 = null;
+  offsetY = 0;
+  mouseY  = null;
+  canvas.style.pointerEvents = 'none';
+  canvas.style.cursor        = 'default';
+  btnDraw.textContent        = '채널 그리기';
+  btnDraw.classList.remove('active');
+  btnSave.disabled = true;
+  setStatus('① [채널 그리기]를 누르고 추세선 시작점을 클릭하세요.');
+  drawCanvas();
+}
+
+function setStatus(msg) { statusEl.textContent = msg; }
+</script>
+</body>
+</html>
