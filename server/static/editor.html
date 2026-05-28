@@ -36,7 +36,12 @@
     /* ── 차트 ── */
     #chart-wrapper { position: relative; flex: 1; min-height: 0; }
     #chart { width: 100%; height: 100%; }
-    #overlay { position: absolute; top: 0; left: 0; pointer-events: none; }
+    #overlay {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
 
     /* ── 채널 패널 ── */
     #panel {
@@ -140,10 +145,10 @@ const series = chart.addCandlestickSeries({
 
 // ── 캔버스 크기 동기화 ────────────────────────────────────────────────────
 function syncSize() {
-  const w = wrapper.clientWidth;
-  const h = wrapper.clientHeight;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
   if (w === 0 || h === 0) return;
-  canvas.width  = w;
+  canvas.width  = w;  // 내부 해상도를 CSS 크기와 일치
   canvas.height = h;
   chart.resize(w, h);
   drawCanvas();
