@@ -56,7 +56,7 @@ def _business_days(n: int) -> list[datetime]:
     return list(reversed(dates))
 
 
-def _gen_ohlcv(base_price: int, days: int = 20) -> pd.DataFrame:
+def _gen_ohlcv(base_price: int, days: int = 90) -> pd.DataFrame:
     dates = _business_days(days)
     price = float(base_price)
     records = []
@@ -82,7 +82,7 @@ def _render_chart(name: str, code: str, df: pd.DataFrame) -> io.BytesIO:
         df,
         type="candle",
         style=_STYLE,
-        title=f"\n{name} ({code})  최근 20 영업일",
+        title=f"\n{name} ({code})  최근 90 영업일",
         ylabel="가격 (원)",
         volume=True,
         figsize=(10, 6),
