@@ -1,9 +1,14 @@
+import os
 import traceback
+
+import aiohttp
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 from utils.summarizer import summarize_news, get_cached_news, get_cache_time_kst
 from utils.chart import fetch_chart, supported_codes
+
+SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
 
 _news_embed: discord.Embed | None = None
 _news_loading: bool = False
@@ -89,8 +94,50 @@ class StockSearchModal(discord.ui.Modal, title="주식 차트 조회"):
         await interaction.followup.send(
             embed=embed,
             file=discord.File(buf, filename="chart.png"),
+            view=ChartResultView(raw),
             ephemeral=True,
         )
+
+
+class ChartResultView(discord.ui.View):
+    """주식 검색 결과 임베드에 붙는 뷰 — 차트수정 버튼 포함."""
+
+    def __init__(self, stock_code: str):
+        super().__init__(timeout=300)
+        self.stock_code = stock_code
+
+    @discord.ui.button(label="차트수정", style=discord.ButtonStyle.secondary, emoji="✏️")
+    async def edit_chart(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{SERVER_URL}/token",
+                    json={"user_id": str(interaction.user.id), "stock_code": self.stock_code},
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status != 200:
+                        raise RuntimeError(f"서버 오류 {resp.status}")
+                    data = await resp.json()
+        except Exception as e:
+            await interaction.followup.send(f"⚠️ 에디터 링크 생성 실패\n```{e}```", ephemeral=True)
+            return
+
+        expires_min = data["expires_in"] // 60
+        try:
+            await interaction.user.send(
+                f"✏️ **{self.stock_code} 채널 에디터**\n\n"
+                f"아래 링크에서 추세 채널을 그리고 저장하세요.\n"
+                f"링크는 **{expires_min}분** 후 만료됩니다.\n\n"
+                f"{data['editor_url']}"
+            )
+            await interaction.followup.send("✅ DM으로 에디터 링크를 보냈습니다!", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.followup.send(
+                f"✏️ **{self.stock_code} 채널 에디터** (DM 차단 — 여기서 확인하세요)\n\n"
+                f"{data['editor_url']}\n⏱️ {expires_min}분 후 만료",
+                ephemeral=True,
+            )
 
 
 class StockView(discord.ui.View):

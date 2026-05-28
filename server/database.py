@@ -24,6 +24,14 @@ CREATE TABLE IF NOT EXISTS channels (
     offset_y   REAL    NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS alerts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id INTEGER NOT NULL,
+    side       TEXT    NOT NULL,  -- 'upper' | 'lower'
+    fired_at   INTEGER NOT NULL,
+    UNIQUE(channel_id, side)      -- 같은 채널·방향 중복 알림 방지
+);
 """
 
 
@@ -113,3 +121,31 @@ def delete_channel(channel_id: int, user_id: str) -> bool:
             (channel_id, user_id),
         )
         return cur.rowcount > 0
+
+
+# ── alerts ───────────────────────────────────────────────────────────────────
+
+def already_alerted(channel_id: int, side: str) -> bool:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM alerts WHERE channel_id = ? AND side = ?",
+            (channel_id, side),
+        ).fetchone()
+        return row is not None
+
+
+def record_alert(channel_id: int, side: str) -> None:
+    with _conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO alerts (channel_id, side, fired_at) VALUES (?,?,?)",
+            (channel_id, side, int(time.time())),
+        )
+
+
+def clear_alert(channel_id: int, side: str) -> None:
+    """가격이 채널 안으로 돌아오면 알림 리셋 (재알림 허용)."""
+    with _conn() as conn:
+        conn.execute(
+            "DELETE FROM alerts WHERE channel_id = ? AND side = ?",
+            (channel_id, side),
+        )
