@@ -78,6 +78,7 @@ async def fetch_chart(code: str) -> tuple[io.BytesIO, dict] | None:
     chart_cfg = _build_chart_config(info["name"], code, candles)
 
     payload = {
+        "version": "4",
         "width": 700,
         "height": 420,
         "backgroundColor": "#1e2329",
