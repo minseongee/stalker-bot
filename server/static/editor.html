@@ -237,11 +237,10 @@ btnDraw.addEventListener('click', () => {
   if (state === 'idle' || state === 'done') {
     resetDraw(false);
     state = 'p1';
-    canvas.style.pointerEvents = 'all';
     btnDraw.textContent = '취소';
     btnDraw.classList.add('active');
     btnReset.disabled = false;
-    setStatus('① 추세선 시작점(P1)을 클릭하세요.');
+    setStatus('① 차트에서 추세선 시작점(P1)을 클릭하세요.');
   } else {
     resetDraw(false);
   }
@@ -249,33 +248,39 @@ btnDraw.addEventListener('click', () => {
 btnReset.addEventListener('click', () => resetDraw(false));
 btnSave.addEventListener('click', saveChannel);
 
-// ── 캔버스 클릭 ──────────────────────────────────────────────────────────
-canvas.addEventListener('click', e => {
-  const { x, y } = clientToCanvas(e);
+// ── 차트 클릭 (canvas pointer-events 불필요 — 차트 자체 API 사용) ─────────
+chart.subscribeClick(param => {
+  if (!param.time || !param.point) return; // 차트 영역 밖 클릭 무시
+
+  const time  = param.time;
+  const price = series.coordinateToPrice(param.point.y);
+  if (price === null) return;
+
   if (state === 'p1') {
-    const pt = canvasToChart(x, y); if (!pt) return;
-    p1 = pt; state = 'p2';
+    p1 = { time, price };
+    state = 'p2';
     setStatus('② 추세선 끝점(P2)을 클릭하세요.');
     drawCanvas();
+
   } else if (state === 'p2') {
-    const pt = canvasToChart(x, y); if (!pt) return;
-    if (pt.time === p1.time) return;
-    p2 = pt; state = 'offset';
-    canvas.style.cursor = 'ns-resize';
+    if (time === p1.time) return;
+    p2 = { time, price };
+    state = 'offset';
     setStatus('③ 마우스를 위아래로 움직여 하단 채널을 설정하고 클릭하세요.');
     drawCanvas();
+
   } else if (state === 'offset') {
-    const upperHere = series.coordinateToPrice(getYOnLine(
-      chart.timeScale().timeToCoordinate(p1.time), series.priceToCoordinate(p1.price),
-      chart.timeScale().timeToCoordinate(p2.time), series.priceToCoordinate(p2.price),
-      x,
-    ));
-    const clickPrice = series.coordinateToPrice(y);
-    if (upperHere === null || clickPrice === null) return;
-    offsetY = clickPrice - upperHere;
+    const x1 = chart.timeScale().timeToCoordinate(p1.time);
+    const y1 = series.priceToCoordinate(p1.price);
+    const x2 = chart.timeScale().timeToCoordinate(p2.time);
+    const y2 = series.priceToCoordinate(p2.price);
+    if (x1 === null || y1 === null || x2 === null || y2 === null) return;
+    const upperPrice = series.coordinateToPrice(
+      getYOnLine(x1, y1, x2, y2, param.point.x)
+    );
+    if (upperPrice === null) return;
+    offsetY = price - upperPrice;
     state   = 'done';
-    canvas.style.cursor        = 'default';
-    canvas.style.pointerEvents = 'none';
     btnDraw.textContent = '채널 그리기';
     btnDraw.classList.remove('active');
     btnSave.disabled  = false;
@@ -285,10 +290,10 @@ canvas.addEventListener('click', e => {
   }
 });
 
-canvas.addEventListener('mousemove', e => {
-  if (state !== 'offset') return;
-  const { y } = clientToCanvas(e);
-  mouseY = y;
+// ── 마우스 이동 — offset 미리보기 ────────────────────────────────────────
+chart.subscribeCrosshairMove(param => {
+  if (state !== 'offset' || !param.point) return;
+  mouseY = param.point.y;
   drawCanvas();
 });
 
@@ -377,8 +382,6 @@ function resetDraw(keepStatus = false) {
   state   = 'idle';
   p1 = p2 = null;
   offsetY = 0; mouseY = null;
-  canvas.style.pointerEvents = 'none';
-  canvas.style.cursor        = 'default';
   btnDraw.textContent = '채널 그리기';
   btnDraw.classList.remove('active');
   btnSave.disabled  = true;
@@ -388,16 +391,6 @@ function resetDraw(keepStatus = false) {
 }
 
 // ── 좌표 헬퍼 ────────────────────────────────────────────────────────────
-function clientToCanvas(e) {
-  const r = canvas.getBoundingClientRect();
-  return { x: e.clientX - r.left, y: e.clientY - r.top };
-}
-function canvasToChart(x, y) {
-  const time  = chart.timeScale().coordinateToTime(x);
-  const price = series.coordinateToPrice(y);
-  if (time === null || price === null) return null;
-  return { time, price };
-}
 function getYOnLine(x1, y1, x2, y2, x) {
   if (x2 === x1) return y1;
   return y1 + (y2 - y1) * (x - x1) / (x2 - x1);
