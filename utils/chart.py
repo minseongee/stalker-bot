@@ -56,33 +56,7 @@ def _build_chart_config(name: str, code: str, candles: list[dict]) -> dict:
             "datasets": [{
                 "label": f"{name} ({code})",
                 "data": data,
-                "color": {
-                    "up": "rgba(239,83,80,0.9)",
-                    "down": "rgba(38,166,154,0.9)",
-                    "unchanged": "rgba(180,180,180,0.9)",
-                },
             }]
-        },
-        "options": {
-            "plugins": {
-                "legend": {"display": False},
-                "title": {
-                    "display": True,
-                    "text": f"{name} ({code})  최근 20 영업일",
-                    "color": "#e0e0e0",
-                    "font": {"size": 14},
-                },
-            },
-            "scales": {
-                "x": {
-                    "ticks": {"color": "#a0a0a0", "maxTicksLimit": 8},
-                    "grid": {"color": "rgba(255,255,255,0.08)"},
-                },
-                "y": {
-                    "ticks": {"color": "#a0a0a0"},
-                    "grid": {"color": "rgba(255,255,255,0.08)"},
-                },
-            },
         },
     }
 
