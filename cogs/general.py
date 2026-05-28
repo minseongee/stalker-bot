@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 from utils.summarizer import summarize_news, get_cached_news, get_cache_time_kst
+from utils.chart import fetch_chart, supported_codes
 
 _news_embed: discord.Embed | None = None
 _news_loading: bool = False
@@ -11,11 +12,11 @@ _dashboard_message: discord.Message | None = None
 
 def _build_dashboard_embed() -> discord.Embed:
     embed = discord.Embed(
-        title="Stalk Bot",
+        title="Stalker Bot",
         description="아래 버튼을 눌러 원하는 기능을 선택하세요.",
         color=discord.Color.blue(),
     )
-    embed.add_field(name="🔍 주식 검색", value="종목 정보를 조회합니다.", inline=False)
+    embed.add_field(name="🔍 주식 검색", value="종목 코드를 입력하면 캔들스틱 차트와 시세를 조회합니다.", inline=False)
     embed.add_field(name="⭐ 관심 종목", value="나만의 관심 종목 목록을 관리합니다.", inline=False)
     embed.add_field(name="📰 시장 뉴스", value="최신 주식 시장 뉴스를 확인합니다.", inline=False)
     news_ts = get_cache_time_kst()
@@ -42,15 +43,56 @@ async def _build_news_embed() -> discord.Embed | None:
     return embed
 
 
+class StockSearchModal(discord.ui.Modal, title="주식 차트 조회"):
+    code = discord.ui.TextInput(
+        label="종목 코드 (6자리)",
+        placeholder="예: 005930",
+        min_length=6,
+        max_length=6,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        raw = self.code.value.strip()
+        result = await fetch_chart(raw)
+        if result is None:
+            await interaction.followup.send(
+                f"❌ `{raw}` 종목을 찾을 수 없습니다.\n\n**지원 종목**\n{supported_codes()}",
+                ephemeral=True,
+            )
+            return
+
+        buf, info = result
+        sign = "▲" if info["change"] >= 0 else "▼"
+        color = discord.Color.red() if info["change"] >= 0 else discord.Color.blue()
+
+        embed = discord.Embed(title=f"📊 {info['name']} ({info['code']})", color=color)
+        embed.add_field(
+            name="현재가",
+            value=f"**{info['close']:,}원** {sign} {info['change']:+,}원 ({info['change_pct']:+.2f}%)",
+            inline=False,
+        )
+        embed.add_field(name="시가", value=f"{info['open']:,}원", inline=True)
+        embed.add_field(name="고가", value=f"{info['high']:,}원", inline=True)
+        embed.add_field(name="저가", value=f"{info['low']:,}원", inline=True)
+        embed.add_field(name="거래량", value=f"{info['volume']:,}", inline=True)
+        embed.set_image(url="attachment://chart.png")
+        embed.set_footer(text="⚠️ 목업 데이터 — 한국투자증권 API 연동 예정")
+
+        await interaction.followup.send(
+            embed=embed,
+            file=discord.File(buf, filename="chart.png"),
+            ephemeral=True,
+        )
+
+
 class StockView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="주식 검색", style=discord.ButtonStyle.primary, emoji="🔍", custom_id="stock:search")
     async def search_stock(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        await interaction.response.send_message(
-            "검색할 종목 티커를 입력해주세요. (예: AAPL, TSLA, 005930)", ephemeral=True
-        )
+        await interaction.response.send_modal(StockSearchModal())
 
     @discord.ui.button(label="관심 종목", style=discord.ButtonStyle.secondary, emoji="⭐", custom_id="stock:watchlist")
     async def watchlist(self, interaction: discord.Interaction, _button: discord.ui.Button):
