@@ -1,8 +1,16 @@
+import asyncio
 import io
 import random
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
-import aiohttp
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import mplfinance as mpf
+
+import pandas as pd
 
 DUMMY_STOCKS: dict[str, dict] = {
     "005930": {"name": "삼성전자", "base_price": 73200},
@@ -15,6 +23,28 @@ DUMMY_STOCKS: dict[str, dict] = {
     "006400": {"name": "삼성SDI", "base_price": 156000},
 }
 
+_executor = ThreadPoolExecutor(max_workers=2)
+
+_KR_FONT = next(
+    (f.name for f in fm.fontManager.ttflist if f.name in ("Nanum Gothic", "Apple SD Gothic Neo", "AppleGothic")),
+    None,
+)
+
+_STYLE = mpf.make_mpf_style(
+    base_mpf_style="nightclouds",
+    marketcolors=mpf.make_marketcolors(
+        up="#ef5350",
+        down="#26a69a",
+        edge="inherit",
+        wick="inherit",
+        volume="in",
+    ),
+    facecolor="#1e2329",
+    figcolor="#1e2329",
+    gridcolor="#2a2f35",
+    rc={"font.family": _KR_FONT} if _KR_FONT else {},
+)
+
 
 def _business_days(n: int) -> list[datetime]:
     dates: list[datetime] = []
@@ -26,93 +56,67 @@ def _business_days(n: int) -> list[datetime]:
     return list(reversed(dates))
 
 
-def _gen_ohlcv(base_price: int, days: int = 20) -> list[dict]:
-    """한투 API 일봉 응답 포맷을 모방한 더미 OHLCV 시뮬레이션."""
+def _gen_ohlcv(base_price: int, days: int = 20) -> pd.DataFrame:
     dates = _business_days(days)
     price = float(base_price)
     records = []
+    index = []
     for date in dates:
         price *= 1 + random.gauss(0, 0.015)
         open_p = price * (1 + random.gauss(0, 0.005))
         high = max(open_p, price) * (1 + abs(random.gauss(0, 0.007)))
         low = min(open_p, price) * (1 - abs(random.gauss(0, 0.007)))
         records.append({
-            "x": date.strftime("%Y-%m-%d"),
-            "o": round(open_p),
-            "h": round(high),
-            "l": round(low),
-            "c": round(price),
-            "v": max(int(random.gauss(10_000_000, 2_500_000)), 100_000),
-            "_dt": date,
+            "Open": round(open_p),
+            "High": round(high),
+            "Low": round(low),
+            "Close": round(price),
+            "Volume": max(int(random.gauss(10_000_000, 2_500_000)), 100_000),
         })
-    return records
+        index.append(date.date())
+    return pd.DataFrame(records, index=pd.DatetimeIndex(index))
 
 
-def _build_chart_config(name: str, code: str, candles: list[dict]) -> dict:
-    data = [{"x": c["x"], "o": c["o"], "h": c["h"], "l": c["l"], "c": c["c"]} for c in candles]
-    return {
-        "type": "candlestick",
-        "data": {
-            "datasets": [{
-                "label": f"{name} ({code})",
-                "data": data,
-            }]
-        },
-    }
-
-
-class ChartAPIError(Exception):
-    """quickchart.io 호출 실패 시 발생."""
+def _render_chart(name: str, code: str, df: pd.DataFrame) -> io.BytesIO:
+    fig, _ = mpf.plot(
+        df,
+        type="candle",
+        style=_STYLE,
+        title=f"\n{name} ({code})  최근 20 영업일",
+        ylabel="가격 (원)",
+        volume=True,
+        figsize=(10, 6),
+        returnfig=True,
+    )
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=120)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
 
 
 async def fetch_chart(code: str) -> tuple[io.BytesIO, dict] | None:
-    """더미 OHLCV로 캔들스틱 차트 이미지와 종목 요약을 반환합니다.
-
-    Returns None if code is unknown; raises ChartAPIError on API failure.
-    """
     info = DUMMY_STOCKS.get(code)
     if not info:
         return None
 
-    candles = _gen_ohlcv(info["base_price"])
-    chart_cfg = _build_chart_config(info["name"], code, candles)
+    df = _gen_ohlcv(info["base_price"])
+    loop = asyncio.get_event_loop()
+    buf = await loop.run_in_executor(_executor, _render_chart, info["name"], code, df)
 
-    payload = {
-        "version": "4",
-        "width": 700,
-        "height": 420,
-        "backgroundColor": "#1e2329",
-        "chart": chart_cfg,
-    }
-
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            "https://quickchart.io/chart",
-            json=payload,
-            timeout=aiohttp.ClientTimeout(total=15),
-        ) as resp:
-            if resp.status != 200:
-                body = await resp.read()
-                body_text = body.decode("utf-8", errors="replace")[:200]
-                raise ChartAPIError(f"quickchart.io {resp.status}: {body_text}")
-            data = await resp.read()
-
-    buf = io.BytesIO(data)
-    buf.seek(0)
-
-    last, prev = candles[-1], candles[-2]
-    change = last["c"] - prev["c"]
+    last, prev = df.iloc[-1], df.iloc[-2]
+    change = int(last["Close"]) - int(prev["Close"])
 
     return buf, {
         "name": info["name"],
         "code": code,
-        "close": last["c"],
-        "open": last["o"],
-        "high": last["h"],
-        "low": last["l"],
-        "volume": last["v"],
+        "close": int(last["Close"]),
+        "open": int(last["Open"]),
+        "high": int(last["High"]),
+        "low": int(last["Low"]),
+        "volume": int(last["Volume"]),
         "change": change,
-        "change_pct": change / prev["c"] * 100,
+        "change_pct": change / int(prev["Close"]) * 100,
     }
 
 
