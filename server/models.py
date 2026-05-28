@@ -34,6 +34,15 @@ class ChannelResponse(BaseModel):
     created_at: int
 
 
+class ChannelUpdateRequest(BaseModel):
+    token: str
+    p1_ts: float
+    p1_price: float
+    p2_ts: float
+    p2_price: float
+    offset_y: float
+
+
 class ChannelDeleteRequest(BaseModel):
     token: str
     channel_id: int

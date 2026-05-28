@@ -123,6 +123,26 @@ def get_all_channels() -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def update_channel_coords(
+    channel_id: int,
+    user_id: str,
+    p1_ts: float, p1_price: float,
+    p2_ts: float, p2_price: float,
+    offset_y: float,
+) -> dict | None:
+    with _conn() as conn:
+        cur = conn.execute(
+            """UPDATE channels
+               SET p1_ts=?, p1_price=?, p2_ts=?, p2_price=?, offset_y=?
+               WHERE id=? AND user_id=?""",
+            (p1_ts, p1_price, p2_ts, p2_price, offset_y, channel_id, user_id),
+        )
+        if cur.rowcount == 0:
+            return None
+        row = conn.execute("SELECT * FROM channels WHERE id=?", (channel_id,)).fetchone()
+        return dict(row) if row else None
+
+
 def delete_channel(channel_id: int, user_id: str) -> bool:
     with _conn() as conn:
         cur = conn.execute(

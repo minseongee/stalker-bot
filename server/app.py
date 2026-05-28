@@ -16,12 +16,14 @@ from .database import (
     get_channels,
     init_db,
     save_channel,
+    update_channel_coords,
     validate_token,
 )
 from .models import (
     ChannelDeleteRequest,
     ChannelResponse,
     ChannelSaveRequest,
+    ChannelUpdateRequest,
     TokenRequest,
     TokenResponse,
 )
@@ -111,6 +113,23 @@ def save_channel_endpoint(req: ChannelSaveRequest):
 def list_channels(user_id: str):
     """알림 워커가 호출 — 사용자의 전체 채널 목록 조회."""
     return [ChannelResponse(**r) for r in get_channels(user_id)]
+
+
+@app.put("/channels/{channel_id}", response_model=ChannelResponse)
+def update_channel_endpoint(channel_id: int, req: ChannelUpdateRequest):
+    """웹 에디터가 호출 — 채널 좌표 수정."""
+    user_id = validate_token(req.token)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="토큰이 유효하지 않거나 만료됐습니다.")
+    row = update_channel_coords(
+        channel_id, user_id,
+        req.p1_ts, req.p1_price,
+        req.p2_ts, req.p2_price,
+        req.offset_y,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="채널을 찾을 수 없습니다.")
+    return ChannelResponse(**row)
 
 
 @app.delete("/channels")

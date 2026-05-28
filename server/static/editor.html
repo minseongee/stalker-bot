@@ -13,8 +13,6 @@
       height: 100vh; display: flex; flex-direction: column;
       user-select: none;
     }
-
-    /* ── 툴바 ── */
     #toolbar {
       display: flex; align-items: center; gap: 10px;
       padding: 8px 14px; background: #252c35;
@@ -31,24 +29,20 @@
     #btn-save  { background: #4caf50; color: #fff; }
     #btn-save:disabled, #btn-reset:disabled { background: #333; color: #666; cursor: not-allowed; }
     #btn-reset { background: #3a3f4b; color: #ccc; }
-    #status { margin-left: auto; font-size: 12px; color: #aaa; white-space: nowrap; max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
-
-    /* ── 차트 ── */
+    #magnet-badge {
+      background: #ffc107; color: #111; padding: 2px 8px; border-radius: 3px;
+      font-size: 12px; font-weight: bold; display: none;
+    }
+    #magnet-badge.on { display: inline; }
+    #status { margin-left: auto; font-size: 12px; color: #aaa; white-space: nowrap; max-width: 380px; overflow: hidden; text-overflow: ellipsis; }
     #chart-wrapper { position: relative; flex: 1; min-height: 0; }
     #chart { width: 100%; height: 100%; }
     #overlay {
       position: absolute; top: 0; left: 0;
       width: 100%; height: 100%;
-      pointer-events: none;
-      z-index: 10;
+      pointer-events: none; z-index: 10;
     }
-
-    /* ── 채널 패널 ── */
-    #panel {
-      flex-shrink: 0; background: #1a1f26;
-      border-top: 1px solid #2a3040;
-      max-height: 160px; overflow-y: auto;
-    }
+    #panel { flex-shrink: 0; background: #1a1f26; border-top: 1px solid #2a3040; max-height: 160px; overflow-y: auto; }
     #panel-header {
       display: flex; align-items: center; justify-content: space-between;
       padding: 6px 14px; background: #20262e; font-size: 12px; font-weight: bold;
@@ -56,38 +50,29 @@
     }
     #panel-header:hover { color: #bbb; }
     #channel-list { padding: 4px 0; }
-    .ch-item {
-      display: flex; align-items: center; gap: 8px;
-      padding: 5px 14px; font-size: 12px; border-bottom: 1px solid #232930;
-      transition: background .12s;
-    }
+    .ch-item { display: flex; align-items: center; gap: 8px; padding: 5px 14px; font-size: 12px; border-bottom: 1px solid #232930; transition: background .12s; }
     .ch-item:hover { background: #252c35; }
     .ch-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
     .ch-info { flex: 1; color: #bbb; }
     .ch-info span { color: #888; font-size: 11px; margin-left: 6px; }
-    .ch-del {
-      background: transparent; border: 1px solid #c0392b; color: #c0392b;
-      padding: 2px 8px; font-size: 11px; border-radius: 3px;
-    }
+    .ch-del { background: transparent; border: 1px solid #c0392b; color: #c0392b; padding: 2px 8px; font-size: 11px; border-radius: 3px; }
     .ch-del:hover { background: #c0392b; color: #fff; }
     #panel-empty { padding: 12px 14px; font-size: 12px; color: #555; }
   </style>
 </head>
 <body>
-
 <div id="toolbar">
   <span id="stock-title">로딩 중…</span>
   <button id="btn-draw">채널 그리기</button>
   <button id="btn-save" disabled>저장</button>
   <button id="btn-reset" disabled>초기화</button>
+  <span id="magnet-badge">🧲 마그넷</span>
   <span id="status">차트를 불러오는 중…</span>
 </div>
-
 <div id="chart-wrapper">
   <div id="chart"></div>
   <canvas id="overlay"></canvas>
 </div>
-
 <div id="panel">
   <div id="panel-header" onclick="togglePanel()">
     <span>📋 저장된 채널 <span id="ch-count" style="color:#4fc3f7"></span></span>
@@ -100,33 +85,53 @@
 </div>
 
 <script>
-// ── 파라미터 ──────────────────────────────────────────────────────────────
+// ── 파라미터 ─────────────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
 const TOKEN  = params.get('token') ?? '';
 const CODE   = params.get('code')  ?? '';
 
 // ── DOM ──────────────────────────────────────────────────────────────────
-const btnDraw  = document.getElementById('btn-draw');
-const btnSave  = document.getElementById('btn-save');
-const btnReset = document.getElementById('btn-reset');
-const statusEl = document.getElementById('status');
-const titleEl  = document.getElementById('stock-title');
-const wrapper  = document.getElementById('chart-wrapper');
-const canvas   = document.getElementById('overlay');
-const ctx      = canvas.getContext('2d');
-const chList   = document.getElementById('channel-list');
-const chCount  = document.getElementById('ch-count');
+const btnDraw    = document.getElementById('btn-draw');
+const btnSave    = document.getElementById('btn-save');
+const btnReset   = document.getElementById('btn-reset');
+const statusEl   = document.getElementById('status');
+const titleEl    = document.getElementById('stock-title');
+const magnetBadge= document.getElementById('magnet-badge');
+const wrapper    = document.getElementById('chart-wrapper');
+const canvas     = document.getElementById('overlay');
+const ctx        = canvas.getContext('2d');
+const chList     = document.getElementById('channel-list');
+const chCount    = document.getElementById('ch-count');
 const panelEmpty = document.getElementById('panel-empty');
 
 // ── 상태 ─────────────────────────────────────────────────────────────────
-let state   = 'idle'; // 'idle' | 'p1' | 'p2' | 'offset' | 'done'
+// 'idle' | 'p1' | 'p2' | 'offset' | 'done' | 'edit_point'
+let state   = 'idle';
 let p1      = null;   // {time, price}
 let p2      = null;
 let offsetY = 0;
-let mouseY  = null;
+let mouseY  = null;   // offset 미리보기 y픽셀
 
-let savedChannels = [];          // 서버에서 불러온 채널 목록
+let savedChannels = [];
+let ohlcvData     = {};   // { "YYYY-MM-DD": {open,high,low,close} }
+let ctrlDown      = false;
+
+// 호버 / 편집 상태
+let hoverInfo  = null;  // { idx, point:'p1'|'p2', ch }
+let editTarget = null;  // { idx, point:'p1'|'p2' }
+let editPreview= null;  // { time, price } — 편집 중 미리보기
+
 const PALETTE = ['#4fc3f7','#81c784','#ffb74d','#f06292','#ce93d8','#80cbc4'];
+const HIT_PX  = 12;  // 호버 감지 반경(픽셀)
+
+// ── Ctrl 키 추적 ──────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Control') { ctrlDown = true; magnetBadge.classList.add('on'); }
+  if (e.key === 'Escape')  resetDraw(false);
+});
+document.addEventListener('keyup', e => {
+  if (e.key === 'Control') { ctrlDown = false; magnetBadge.classList.remove('on'); drawCanvas(); }
+});
 
 // ── Lightweight Charts ────────────────────────────────────────────────────
 const chart = LightweightCharts.createChart(document.getElementById('chart'), {
@@ -145,17 +150,14 @@ const series = chart.addCandlestickSeries({
 
 // ── 캔버스 크기 동기화 ────────────────────────────────────────────────────
 function syncSize() {
-  const w = canvas.clientWidth;
-  const h = canvas.clientHeight;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
   if (w === 0 || h === 0) return;
-  canvas.width  = w;  // 내부 해상도를 CSS 크기와 일치
-  canvas.height = h;
+  canvas.width = w; canvas.height = h;
   chart.resize(w, h);
   drawCanvas();
 }
 new ResizeObserver(syncSize).observe(wrapper);
 chart.timeScale().subscribeVisibleTimeRangeChange(drawCanvas);
-// 초기 크기 명시적으로 설정 (ResizeObserver 지연 대비)
 requestAnimationFrame(syncSize);
 
 // ── 데이터 로드 ───────────────────────────────────────────────────────────
@@ -166,21 +168,25 @@ async function loadAll() {
       fetch(`/channels/me?token=${TOKEN}&code=${CODE}`),
     ]);
     if (!ohlcvRes.ok) throw new Error('OHLCV 로드 실패');
-
     const ohlcv = await ohlcvRes.json();
+
+    // OHLCV 딕셔너리 구축 (마그넷용)
+    ohlcvData = {};
+    for (const d of ohlcv) ohlcvData[d.time] = d;
+
     series.setData(ohlcv);
-    chart.timeScale().fitContent();
-    syncSize(); // 데이터 로드 후 캔버스 크기 재확인
+    // 초기 뷰: 최근 150개 캔들만 표시
+    if (ohlcv.length > 150) {
+      chart.timeScale().setVisibleLogicalRange({ from: ohlcv.length - 151, to: ohlcv.length - 1 });
+    } else {
+      chart.timeScale().fitContent();
+    }
+    syncSize();
     titleEl.textContent = `${CODE} 채널 에디터`;
 
-    if (chRes.ok) {
-      savedChannels = await chRes.json();
-    } else {
-      savedChannels = [];
-    }
+    savedChannels = chRes.ok ? await chRes.json() : [];
     renderChannelList();
-    drawCanvas();
-    setStatus('① [채널 그리기]를 누르고 추세선 시작점을 클릭하세요.');
+    setStatus('① [채널 그리기]를 누르고 추세선 시작점을 클릭하세요. (Ctrl: 마그넷 스냅)');
   } catch (e) {
     setStatus(`❌ 로드 실패: ${e.message}`);
   }
@@ -195,19 +201,17 @@ function togglePanel() {
   document.getElementById('panel-arrow').textContent  = panelOpen ? '▲' : '▼';
 }
 
-// ── 채널 목록 렌더링 ─────────────────────────────────────────────────────
+// ── 채널 목록 렌더링 ──────────────────────────────────────────────────────
 function renderChannelList() {
   chList.innerHTML = '';
   chCount.textContent = savedChannels.length ? `(${savedChannels.length})` : '';
   if (!savedChannels.length) { panelEmpty.style.display = ''; return; }
   panelEmpty.style.display = 'none';
-
   savedChannels.forEach((ch, i) => {
     const color = PALETTE[i % PALETTE.length];
     const date  = new Date(ch.created_at * 1000).toLocaleDateString('ko-KR');
     const off   = ch.offset_y >= 0 ? `+${ch.offset_y.toFixed(0)}` : ch.offset_y.toFixed(0);
-
-    const item = document.createElement('div');
+    const item  = document.createElement('div');
     item.className = 'ch-item';
     item.innerHTML = `
       <div class="ch-dot" style="background:${color}"></div>
@@ -232,9 +236,23 @@ async function deleteChannel(id) {
     savedChannels = savedChannels.filter(c => c.id !== id);
     renderChannelList();
     setStatus(`✅ 채널 #${id} 삭제 완료`);
-  } catch (e) {
-    alert(`삭제 실패: ${e.message}`);
-  }
+  } catch (e) { alert(`삭제 실패: ${e.message}`); }
+}
+
+// ── 채널 수정 (PUT) ────────────────────────────────────────────────────────
+async function putChannel(ch) {
+  const res = await fetch(`/channels/${ch.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      token: TOKEN,
+      p1_ts: ch.p1_ts, p1_price: ch.p1_price,
+      p2_ts: ch.p2_ts, p2_price: ch.p2_price,
+      offset_y: ch.offset_y,
+    }),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.detail ?? `HTTP ${res.status}`); }
+  return await res.json();
 }
 
 // ── 버튼 ─────────────────────────────────────────────────────────────────
@@ -242,10 +260,9 @@ btnDraw.addEventListener('click', () => {
   if (state === 'idle' || state === 'done') {
     resetDraw(false);
     state = 'p1';
-    btnDraw.textContent = '취소';
-    btnDraw.classList.add('active');
+    btnDraw.textContent = '취소'; btnDraw.classList.add('active');
     btnReset.disabled = false;
-    setStatus('① 차트에서 추세선 시작점(P1)을 클릭하세요.');
+    setStatus('① 추세선 시작점(P1)을 클릭하세요. (Ctrl: 마그넷)');
   } else {
     resetDraw(false);
   }
@@ -253,52 +270,103 @@ btnDraw.addEventListener('click', () => {
 btnReset.addEventListener('click', () => resetDraw(false));
 btnSave.addEventListener('click', saveChannel);
 
-// ── 차트 클릭 (canvas pointer-events 불필요 — 차트 자체 API 사용) ─────────
-chart.subscribeClick(param => {
-  if (!param.time || !param.point) return; // 차트 영역 밖 클릭 무시
+// ── 차트 클릭 ─────────────────────────────────────────────────────────────
+chart.subscribeClick(param => { handleClick(param); });
 
-  const time  = param.time;
-  const price = series.coordinateToPrice(param.point.y);
-  if (price === null) return;
+async function handleClick(param) {
+  if (!param.point) return;
+
+  const rawPrice = series.coordinateToPrice(param.point.y);
+  if (rawPrice === null) return;
+  const time  = param.time ?? null;
+  const price = (ctrlDown && time) ? snapPrice(time, rawPrice) : rawPrice;
+
+  // ── 편집 모드: 새 위치 확정 ────────────────────────────────────────────
+  if (state === 'edit_point') {
+    if (!time) return;
+    const ch = { ...savedChannels[editTarget.idx] };
+    if (editTarget.point === 'p1') { ch.p1_ts = toTs(time); ch.p1_price = price; }
+    else                           { ch.p2_ts = toTs(time); ch.p2_price = price; }
+    try {
+      const updated = await putChannel(ch);
+      savedChannels[editTarget.idx] = updated;
+      renderChannelList();
+      setStatus(`✅ 채널 #${ch.id} ${editTarget.point.toUpperCase()} 이동 완료`);
+    } catch (e) { setStatus(`❌ 수정 실패: ${e.message}`); }
+    editTarget = null; editPreview = null; state = 'idle';
+    btnDraw.disabled = false;
+    drawCanvas(); return;
+  }
+
+  // ── 호버된 앵커 클릭 → 편집 시작 ──────────────────────────────────────
+  if ((state === 'idle' || state === 'done') && hoverInfo) {
+    editTarget = { idx: hoverInfo.idx, point: hoverInfo.point };
+    hoverInfo  = null; state = 'edit_point';
+    btnDraw.disabled = true; btnSave.disabled = true; btnReset.disabled = true;
+    setStatus(`✏️ 채널 #${savedChannels[editTarget.idx].id} ${editTarget.point.toUpperCase()} 이동 중 — 새 위치를 클릭하세요.`);
+    drawCanvas(); return;
+  }
+
+  // ── 일반 그리기 흐름 ───────────────────────────────────────────────────
+  if (!time) return;
 
   if (state === 'p1') {
-    p1 = { time, price };
-    state = 'p2';
-    setStatus('② 추세선 끝점(P2)을 클릭하세요.');
+    p1 = { time, price }; state = 'p2';
+    setStatus('② 추세선 끝점(P2)을 클릭하세요. (Ctrl: 마그넷)');
     drawCanvas();
-
   } else if (state === 'p2') {
     if (time === p1.time) return;
-    p2 = { time, price };
-    state = 'offset';
+    p2 = { time, price }; state = 'offset';
     setStatus('③ 마우스를 위아래로 움직여 하단 채널을 설정하고 클릭하세요.');
     drawCanvas();
-
   } else if (state === 'offset') {
     const x1 = chart.timeScale().timeToCoordinate(p1.time);
     const y1 = series.priceToCoordinate(p1.price);
     const x2 = chart.timeScale().timeToCoordinate(p2.time);
     const y2 = series.priceToCoordinate(p2.price);
     if (x1 === null || y1 === null || x2 === null || y2 === null) return;
-    const upperPrice = series.coordinateToPrice(
-      getYOnLine(x1, y1, x2, y2, param.point.x)
-    );
+    const upperPrice = series.coordinateToPrice(getYOnLine(x1, y1, x2, y2, param.point.x));
     if (upperPrice === null) return;
     offsetY = price - upperPrice;
     state   = 'done';
-    btnDraw.textContent = '채널 그리기';
-    btnDraw.classList.remove('active');
-    btnSave.disabled  = false;
-    btnReset.disabled = false;
+    btnDraw.textContent = '채널 그리기'; btnDraw.classList.remove('active');
+    btnSave.disabled = false; btnReset.disabled = false;
     setStatus(`✅ 채널 완성 (오프셋 ${offsetY.toFixed(0)}원) — [저장]을 눌러 등록하세요.`);
     drawCanvas();
   }
-});
+}
 
-// ── 마우스 이동 — offset 미리보기 ────────────────────────────────────────
+// ── 마우스 이동 ───────────────────────────────────────────────────────────
 chart.subscribeCrosshairMove(param => {
-  if (state !== 'offset' || !param.point) return;
-  mouseY = param.point.y;
+  if (!param.point) { hoverInfo = null; editPreview = null; drawCanvas(); return; }
+
+  // offset 미리보기
+  if (state === 'offset') { mouseY = param.point.y; drawCanvas(); return; }
+
+  // edit_point 미리보기
+  if (state === 'edit_point' && param.time) {
+    const rawPrice = series.coordinateToPrice(param.point.y);
+    const price    = (ctrlDown && param.time) ? snapPrice(param.time, rawPrice) : rawPrice;
+    editPreview = { time: param.time, price };
+    drawCanvas(); return;
+  }
+
+  // 호버 감지 (idle / done 상태)
+  if (state !== 'idle' && state !== 'done') return;
+  hoverInfo = null;
+  for (let i = 0; i < savedChannels.length; i++) {
+    const ch = savedChannels[i];
+    const x1 = chart.timeScale().timeToCoordinate(tsToStr(ch.p1_ts));
+    const y1 = series.priceToCoordinate(ch.p1_price);
+    const x2 = chart.timeScale().timeToCoordinate(tsToStr(ch.p2_ts));
+    const y2 = series.priceToCoordinate(ch.p2_price);
+    if (x1 !== null && y1 !== null && dist(param.point.x, param.point.y, x1, y1) < HIT_PX) {
+      hoverInfo = { idx: i, point: 'p1', ch }; break;
+    }
+    if (x2 !== null && y2 !== null && dist(param.point.x, param.point.y, x2, y2) < HIT_PX) {
+      hoverInfo = { idx: i, point: 'p2', ch }; break;
+    }
+  }
   drawCanvas();
 });
 
@@ -306,25 +374,77 @@ chart.subscribeCrosshairMove(param => {
 function drawCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // 저장된 채널 (흐린 색으로)
+  // 저장된 채널
   savedChannels.forEach((ch, i) => {
-    const color = PALETTE[i % PALETTE.length];
-    drawSavedChannel(ch, color);
+    const color   = PALETTE[i % PALETTE.length];
+    const isEdit  = editTarget && editTarget.idx === i;
+    drawSavedChannel(ch, color, isEdit ? 0.25 : 0.55); // 편집 중인 건 흐리게
   });
+
+  // 편집 미리보기
+  if (state === 'edit_point' && editTarget !== null) {
+    const ch    = savedChannels[editTarget.idx];
+    const color = PALETTE[editTarget.idx % PALETTE.length];
+    const preview = editPreview ?? {
+      time:  tsToStr(editTarget.point === 'p1' ? ch.p1_ts : ch.p2_ts),
+      price: editTarget.point === 'p1' ? ch.p1_price : ch.p2_price,
+    };
+    const aTime = editTarget.point === 'p1' ? tsToStr(ch.p2_ts) : tsToStr(ch.p1_ts);
+    const aPrice= editTarget.point === 'p1' ? ch.p2_price : ch.p1_price;
+    const ax = chart.timeScale().timeToCoordinate(aTime);
+    const ay = series.priceToCoordinate(aPrice);
+    const ex = chart.timeScale().timeToCoordinate(preview.time);
+    const ey = series.priceToCoordinate(preview.price);
+    if (ax !== null && ay !== null && ex !== null && ey !== null) {
+      const offPxA = priceDiffToPx(ch.offset_y, aPrice);
+      const offPxE = priceDiffToPx(ch.offset_y, preview.price);
+      const [lx,ly,rx,ry] = editTarget.point === 'p1' ? [ex,ey,ax,ay] : [ax,ay,ex,ey];
+      extendLine(lx, ly, rx, ry, color, false, 0.9);
+      if (offPxA !== null && offPxE !== null)
+        extendLine(lx, ly + (editTarget.point==='p1'?offPxE:offPxA),
+                   rx, ry + (editTarget.point==='p1'?offPxA:offPxE), color, true, 0.9);
+      drawDot(ex, ey, '#ffeb3b', 7);
+    }
+  }
+
+  // 호버 앵커 강조
+  if (hoverInfo) {
+    const ch = hoverInfo.ch;
+    const x  = chart.timeScale().timeToCoordinate(tsToStr(hoverInfo.point === 'p1' ? ch.p1_ts : ch.p2_ts));
+    const y  = series.priceToCoordinate(hoverInfo.point === 'p1' ? ch.p1_price : ch.p2_price);
+    if (x !== null && y !== null) drawDot(x, y, '#ffeb3b', 8);
+    setStatus(`✏️ ${hoverInfo.point.toUpperCase()} 클릭하면 채널 수정 모드 진입`);
+  }
+
+  // 마그넷 스냅 가이드 (Ctrl 누를 때)
+  if (ctrlDown && (state === 'p1' || state === 'p2' || state === 'edit_point')) {
+    // subscribeCrosshairMove에서 editPreview에 이미 스냅된 가격이 들어있음
+    // 마지막 편집 미리보기의 y 좌표에 수평선 표시
+    const previewPrice = editPreview?.price ?? p1?.price ?? null;
+    if (previewPrice !== null) {
+      const sy = series.priceToCoordinate(previewPrice);
+      if (sy !== null) {
+        ctx.save();
+        ctx.strokeStyle = '#ffc107'; ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]); ctx.globalAlpha = 0.6;
+        ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy);
+        ctx.stroke(); ctx.restore();
+      }
+    }
+  }
 
   // 현재 그리는 채널
   if (!p1) return;
   const x1 = chart.timeScale().timeToCoordinate(p1.time);
   const y1 = series.priceToCoordinate(p1.price);
   if (x1 === null || y1 === null) return;
-  drawDot(x1, y1, '#4fc3f7');
+  drawDot(x1, y1, '#4fc3f7', 5);
 
   if (!p2) return;
   const x2 = chart.timeScale().timeToCoordinate(p2.time);
   const y2 = series.priceToCoordinate(p2.price);
   if (x2 === null || y2 === null) return;
-  drawDot(x2, y2, '#4fc3f7');
-
+  drawDot(x2, y2, '#4fc3f7', 5);
   extendLine(x1, y1, x2, y2, '#4fc3f7', false, 0.9);
 
   if (state === 'offset' && mouseY !== null) {
@@ -336,29 +456,24 @@ function drawCanvas() {
   }
 }
 
-function drawSavedChannel(ch, color) {
-  // p1_ts, p2_ts (unix seconds) → Lightweight Charts time 형식으로 변환
-  const toTime = ts => {
-    const d = new Date(ts * 1000);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
-  };
-  const x1 = chart.timeScale().timeToCoordinate(toTime(ch.p1_ts));
+function drawSavedChannel(ch, color, alpha = 0.55) {
+  const x1 = chart.timeScale().timeToCoordinate(tsToStr(ch.p1_ts));
   const y1 = series.priceToCoordinate(ch.p1_price);
-  const x2 = chart.timeScale().timeToCoordinate(toTime(ch.p2_ts));
+  const x2 = chart.timeScale().timeToCoordinate(tsToStr(ch.p2_ts));
   const y2 = series.priceToCoordinate(ch.p2_price);
   if (x1 === null || y1 === null || x2 === null || y2 === null) return;
-
-  extendLine(x1, y1, x2, y2, color, false, 0.55);
+  extendLine(x1, y1, x2, y2, color, false, alpha);
   const offPx = priceDiffToPx(ch.offset_y, ch.p1_price);
-  if (offPx !== null) extendLine(x1, y1 + offPx, x2, y2 + offPx, color, true, 0.55);
+  if (offPx !== null) extendLine(x1, y1 + offPx, x2, y2 + offPx, color, true, alpha);
+  // 앵커 점 (작게, 항상 표시)
+  drawDot(x1, y1, color, 4);
+  drawDot(x2, y2, color, 4);
 }
 
 // ── 저장 ─────────────────────────────────────────────────────────────────
 async function saveChannel() {
   if (!p1 || !p2) return;
-  btnSave.disabled = true;
-  setStatus('저장 중…');
-  const toTs = t => typeof t === 'number' ? t : new Date(t + 'T00:00:00Z').getTime() / 1000;
+  btnSave.disabled = true; setStatus('저장 중…');
   try {
     const res = await fetch('/channels', {
       method: 'POST',
@@ -376,52 +491,66 @@ async function saveChannel() {
     renderChannelList();
     resetDraw(true);
     setStatus(`✅ 채널 #${saved.id} 저장 완료! 계속 그릴 수 있습니다.`);
-  } catch (e) {
-    setStatus(`❌ 저장 실패: ${e.message}`);
-    btnSave.disabled = false;
-  }
+  } catch (e) { setStatus(`❌ 저장 실패: ${e.message}`); btnSave.disabled = false; }
 }
 
 // ── 초기화 ───────────────────────────────────────────────────────────────
 function resetDraw(keepStatus = false) {
-  state   = 'idle';
-  p1 = p2 = null;
-  offsetY = 0; mouseY = null;
-  btnDraw.textContent = '채널 그리기';
-  btnDraw.classList.remove('active');
-  btnSave.disabled  = true;
-  btnReset.disabled = true;
-  if (!keepStatus) setStatus('① [채널 그리기]를 누르고 추세선 시작점을 클릭하세요.');
+  state = 'idle'; p1 = p2 = null; offsetY = 0; mouseY = null;
+  editTarget = null; editPreview = null; hoverInfo = null;
+  btnDraw.textContent = '채널 그리기'; btnDraw.classList.remove('active');
+  btnDraw.disabled = false;
+  btnSave.disabled = true; btnReset.disabled = true;
+  if (!keepStatus) setStatus('① [채널 그리기]를 누르고 추세선 시작점을 클릭하세요. (Ctrl: 마그넷 스냅)');
   drawCanvas();
 }
 
-// ── 좌표 헬퍼 ────────────────────────────────────────────────────────────
+// ── 헬퍼 ─────────────────────────────────────────────────────────────────
+/** Unix timestamp(초) → "YYYY-MM-DD" */
+function tsToStr(ts) {
+  const d = new Date(ts * 1000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+}
+/** LightweightCharts Time → Unix timestamp(초) */
+function toTs(t) {
+  if (typeof t === 'number') return t;
+  const s = (typeof t === 'string') ? t : `${t.year}-${String(t.month).padStart(2,'0')}-${String(t.day).padStart(2,'0')}`;
+  return new Date(s + 'T00:00:00Z').getTime() / 1000;
+}
+/** Ctrl 마그넷: time 위치의 캔들 OHLC 중 price에 가장 가까운 레벨로 스냅 */
+function snapPrice(time, price) {
+  if (price === null) return price;
+  const key    = (typeof time === 'string') ? time : tsToStr(toTs(time));
+  const candle = ohlcvData[key];
+  if (!candle) return price;
+  return [candle.open, candle.high, candle.low, candle.close]
+    .reduce((a, b) => Math.abs(a - price) < Math.abs(b - price) ? a : b);
+}
+function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
 function getYOnLine(x1, y1, x2, y2, x) {
   if (x2 === x1) return y1;
   return y1 + (y2 - y1) * (x - x1) / (x2 - x1);
 }
-function priceDiffToPx(priceDiff, refPrice) {
-  const refPx = series.priceToCoordinate(refPrice);
-  const offPx = series.priceToCoordinate(refPrice + priceDiff);
-  if (refPx === null || offPx === null) return null;
-  return offPx - refPx;
+function priceDiffToPx(diff, ref) {
+  const a = series.priceToCoordinate(ref);
+  const b = series.priceToCoordinate(ref + diff);
+  return (a === null || b === null) ? null : b - a;
 }
 function extendLine(x1, y1, x2, y2, color, dashed, alpha = 0.9) {
   if (x1 === x2) return;
-  const slope  = (y2 - y1) / (x2 - x1);
-  const yLeft  = y1 - slope * x1;
-  const yRight = y1 + slope * (canvas.width - x1);
+  const slope = (y2 - y1) / (x2 - x1);
   ctx.save();
   ctx.strokeStyle = color; ctx.lineWidth = 2;
-  ctx.globalAlpha = alpha;
-  ctx.setLineDash(dashed ? [8, 5] : []);
-  ctx.beginPath(); ctx.moveTo(0, yLeft); ctx.lineTo(canvas.width, yRight);
+  ctx.globalAlpha = alpha; ctx.setLineDash(dashed ? [8, 5] : []);
+  ctx.beginPath();
+  ctx.moveTo(0, y1 - slope * x1);
+  ctx.lineTo(canvas.width, y1 + slope * (canvas.width - x1));
   ctx.stroke(); ctx.restore();
 }
-function drawDot(x, y, color) {
+function drawDot(x, y, color, r = 5) {
   ctx.save();
   ctx.fillStyle = color; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2);
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill(); ctx.stroke(); ctx.restore();
 }
 function setStatus(msg) { statusEl.textContent = msg; }
