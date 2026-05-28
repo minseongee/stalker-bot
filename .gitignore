@@ -1,6 +1,15 @@
+# 환경 설정
 .env
 .DS_Store
-.claude/
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+
+# 캐시 / 데이터
 .news_cache.json
+*.db
+
+# Claude
+.claude/
