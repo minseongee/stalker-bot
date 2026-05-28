@@ -25,6 +25,13 @@ CREATE TABLE IF NOT EXISTS channels (
     created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS watchlist (
+    user_id    TEXT    NOT NULL,
+    stock_code TEXT    NOT NULL,
+    added_at   INTEGER NOT NULL,
+    PRIMARY KEY (user_id, stock_code)
+);
+
 CREATE TABLE IF NOT EXISTS alerts (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id INTEGER NOT NULL,
@@ -148,6 +155,39 @@ def delete_channel(channel_id: int, user_id: str) -> bool:
         cur = conn.execute(
             "DELETE FROM channels WHERE id = ? AND user_id = ?",
             (channel_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
+# ── watchlist ────────────────────────────────────────────────────────────────
+
+def get_watchlist(user_id: str) -> list[str]:
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT stock_code FROM watchlist WHERE user_id = ? ORDER BY added_at",
+            (user_id,),
+        ).fetchall()
+        return [r["stock_code"] for r in rows]
+
+
+def add_to_watchlist(user_id: str, stock_code: str) -> bool:
+    """이미 있으면 False, 새로 추가하면 True."""
+    try:
+        with _conn() as conn:
+            conn.execute(
+                "INSERT INTO watchlist (user_id, stock_code, added_at) VALUES (?,?,?)",
+                (user_id, stock_code, int(time.time())),
+            )
+        return True
+    except Exception:
+        return False
+
+
+def remove_from_watchlist(user_id: str, stock_code: str) -> bool:
+    with _conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM watchlist WHERE user_id = ? AND stock_code = ?",
+            (user_id, stock_code),
         )
         return cur.rowcount > 0
 
