@@ -134,8 +134,10 @@ let offsetY = 0;
 let magnetOn    = false;
 let snapPoint   = null; // {time, price, label:'H'|'L'|'O'|'C'} — 현재 스냅 위치
 
-// 드로잉 미리보기 (마우스 따라다니는 점/선)
+// 드로잉 미리보기
 let cursorPos = null; // {time, price} — 실제 찍힐 위치 (스냅 or 원래)
+let lastPxPos = null; // {x, y}        — 마지막 raw 픽셀 좌표 (offset 미리보기용)
+let lastCrosshairParam = null; // 마지막 crosshair 파라미터 (Cmd 즉시 스냅 재계산용)
 
 // 편집
 let hoverInfo  = null; // {idx, point:'p1'|'p2', ch}
@@ -152,7 +154,16 @@ const HIT_PX  = 12;
 function setMagnet(on) {
   magnetOn = on;
   btnMagnet.classList.toggle('on', on);
-  if (!on) snapPoint = null;
+  // Cmd/Ctrl 누른 순간 마지막 마우스 위치 기준으로 즉시 스냅 재계산
+  if (on && lastCrosshairParam?.point && lastCrosshairParam?.time) {
+    const p = lastCrosshairParam;
+    const snap = calcSnap(p.time, p.point.y);
+    snapPoint = snap ? { time: p.time, price: snap.price, label: snap.label } : null;
+    cursorPos = snap ? { time: p.time, price: snap.price }
+                     : { time: p.time, price: series.coordinateToPrice(p.point.y) };
+  } else {
+    snapPoint = null;
+  }
   drawCanvas();
 }
 
@@ -315,10 +326,9 @@ chart.subscribeClick(param => { handleClick(param); });
 
 async function handleClick(param) {
   if (!param.point) return;
-  // 스냅 or 원래 위치 사용
-  const snap  = calcSnap(param.time, param.point.y);
-  const time  = snap ? param.time : param.time;
-  const price = snap ? snap.price : series.coordinateToPrice(param.point.y);
+  // cursorPos 우선 사용 — subscribeCrosshairMove에서 스냅 적용된 위치
+  const time  = cursorPos?.time  ?? param.time;
+  const price = cursorPos?.price ?? series.coordinateToPrice(param.point.y);
   if (price === null) return;
 
   // ── 편집 확정 ────────────────────────────────────────────────────────
@@ -364,9 +374,12 @@ async function handleClick(param) {
     const x2 = chart.timeScale().timeToCoordinate(p2.time);
     const y2 = series.priceToCoordinate(p2.price);
     if (x1 === null || y1 === null || x2 === null || y2 === null) return;
+    // 미리보기와 동일한 방식으로 offset 계산 (마우스 x 기준)
+    const dy = param.point.y - getYOnLine(x1, y1, x2, y2, param.point.x);
     const upperPrice = series.coordinateToPrice(getYOnLine(x1, y1, x2, y2, param.point.x));
-    if (upperPrice === null) return;
-    offsetY = price - upperPrice;
+    const lowerPrice = series.coordinateToPrice(getYOnLine(x1, y1, x2, y2, param.point.x) + dy);
+    if (upperPrice === null || lowerPrice === null) return;
+    offsetY = lowerPrice - upperPrice;
     state   = 'done';
     btnDraw.textContent = '채널 그리기'; btnDraw.classList.remove('active');
     btnSave.disabled = false; btnReset.disabled = false;
@@ -376,10 +389,13 @@ async function handleClick(param) {
 }
 
 chart.subscribeCrosshairMove(param => {
+  lastCrosshairParam = param; // 항상 최신 파라미터 보관
   if (!param.point) {
+    lastPxPos = null;
     snapPoint = null; cursorPos = null; hoverInfo = null;
     editPreview = null; drawCanvas(); return;
   }
+  lastPxPos = { x: param.point.x, y: param.point.y }; // 원시 픽셀 좌표 저장
   const rawPrice = series.coordinateToPrice(param.point.y);
 
   // 마그넷 스냅 계산 (항상)
@@ -541,12 +557,10 @@ function drawCanvas() {
   drawDot(x2, y2, '#4fc3f7', 5);
   extendLine(x1, y1, x2, y2, '#4fc3f7', false, 0.9);
 
-  if (state === 'offset' && cursorPos) {
-    const mouseYpx = series.priceToCoordinate(cursorPos.price);
-    if (mouseYpx !== null) {
-      const dy = mouseYpx - getYOnLine(x1, y1, x2, y2, x1);
-      extendLine(x1, y1+dy, x2, y2+dy, '#4fc3f7', true, 0.9);
-    }
+  if (state === 'offset' && lastPxPos) {
+    // 마우스 실제 x 위치에서의 상단선 y를 구해 offset 계산 → 선이 마우스를 정확히 통과
+    const dy = lastPxPos.y - getYOnLine(x1, y1, x2, y2, lastPxPos.x);
+    extendLine(x1, y1+dy, x2, y2+dy, '#4fc3f7', true, 0.9);
   } else if (state === 'done') {
     const offPx = priceDiffToPx(offsetY, p1.price);
     if (offPx !== null) extendLine(x1, y1+offPx, x2, y2+offPx, '#4fc3f7', true, 0.9);
@@ -589,7 +603,7 @@ async function saveChannel() {
 // ── 초기화 ───────────────────────────────────────────────────────────────
 function resetDraw(keepStatus = false) {
   state = 'idle'; p1=p2=null; offsetY=0;
-  snapPoint=null; cursorPos=null; hoverInfo=null; editTarget=null; editPreview=null;
+  snapPoint=null; cursorPos=null; lastPxPos=null; hoverInfo=null; editTarget=null; editPreview=null;
   btnDraw.textContent='채널 그리기'; btnDraw.classList.remove('active');
   btnDraw.disabled=false; btnSave.disabled=true; btnReset.disabled=true;
   if (!keepStatus) setStatus('준비. [채널 그리기]를 눌러 시작 | 저장된 채널 앵커 위에 마우스 → 수정 가능');
