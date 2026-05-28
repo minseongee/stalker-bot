@@ -140,19 +140,24 @@ const series = chart.addCandlestickSeries({
 
 // ── 캔버스 크기 동기화 ────────────────────────────────────────────────────
 function syncSize() {
-  canvas.width  = wrapper.clientWidth;
-  canvas.height = wrapper.clientHeight;
-  chart.resize(wrapper.clientWidth, wrapper.clientHeight);
+  const w = wrapper.clientWidth;
+  const h = wrapper.clientHeight;
+  if (w === 0 || h === 0) return;
+  canvas.width  = w;
+  canvas.height = h;
+  chart.resize(w, h);
   drawCanvas();
 }
 new ResizeObserver(syncSize).observe(wrapper);
 chart.timeScale().subscribeVisibleTimeRangeChange(drawCanvas);
+// 초기 크기 명시적으로 설정 (ResizeObserver 지연 대비)
+requestAnimationFrame(syncSize);
 
 // ── 데이터 로드 ───────────────────────────────────────────────────────────
 async function loadAll() {
   try {
     const [ohlcvRes, chRes] = await Promise.all([
-      fetch(`/ohlcv/${CODE}`),
+      fetch(`/ohlcv/${CODE}?days=3000`),
       fetch(`/channels/me?token=${TOKEN}&code=${CODE}`),
     ]);
     if (!ohlcvRes.ok) throw new Error('OHLCV 로드 실패');
@@ -160,6 +165,7 @@ async function loadAll() {
     const ohlcv = await ohlcvRes.json();
     series.setData(ohlcv);
     chart.timeScale().fitContent();
+    syncSize(); // 데이터 로드 후 캔버스 크기 재확인
     titleEl.textContent = `${CODE} 채널 에디터`;
 
     if (chRes.ok) {
