@@ -6,7 +6,6 @@ from discord.ext import commands, tasks
 
 from server.database import (
     already_alerted,
-    clear_alert,
     get_all_channels,
     init_db,
     record_alert,
@@ -33,7 +32,7 @@ def _channel_bounds_now(ch: dict) -> tuple[float, float] | None:
     slope = (ch["p2_price"] - ch["p1_price"]) / (p2_ts - p1_ts)
     now = time.time()
     upper = ch["p1_price"] + slope * (now - p1_ts)
-    lower = upper + ch["offset_y"]  # offset_y는 보통 음수
+    lower = upper + ch["offset_y"]
     return upper, lower
 
 
@@ -48,12 +47,11 @@ class Worker(commands.Cog):
 
     @tasks.loop(minutes=POLL_MINUTES)
     async def poll(self):
-        channels = get_all_channels()
-        for ch in channels:
+        for ch in get_all_channels():
             await self._check(ch)
 
     async def _check(self, ch: dict):
-        code = ch["stock_code"]
+        code  = ch["stock_code"]
         price = _current_price(code)
         if price is None:
             return
@@ -68,21 +66,19 @@ class Worker(commands.Cog):
             return
 
         ch_id = ch["id"]
-        name = DUMMY_STOCKS.get(code, {}).get("name", code)
+        name  = DUMMY_STOCKS.get(code, {}).get("name", code)
 
+        # 상단선 상향 돌파
         if price >= upper:
             if not already_alerted(ch_id, "upper"):
                 record_alert(ch_id, "upper")
-                await self._send_alert(user, name, code, price, upper, "상단")
-        else:
-            clear_alert(ch_id, "upper")
+                await self._send_alert(user, name, code, price, upper, "upper")
 
+        # 하단선 하향 이탈
         if price <= lower:
             if not already_alerted(ch_id, "lower"):
                 record_alert(ch_id, "lower")
-                await self._send_alert(user, name, code, price, lower, "하단")
-        else:
-            clear_alert(ch_id, "lower")
+                await self._send_alert(user, name, code, price, lower, "lower")
 
     async def _get_user(self, user_id: str) -> discord.User | None:
         try:
@@ -97,17 +93,27 @@ class Worker(commands.Cog):
         code: str,
         price: float,
         line_price: float,
-        side: str,
+        side: str,  # "upper" | "lower"
     ):
-        arrow = "📈" if side == "상단" else "📉"
-        embed = discord.Embed(
-            title=f"{arrow} 채널 {side}선 돌파 알림",
-            color=discord.Color.red() if side == "상단" else discord.Color.blue(),
-        )
-        embed.add_field(name="종목", value=f"**{name}** ({code})", inline=True)
-        embed.add_field(name="현재가", value=f"**{price:,.0f}원**", inline=True)
-        embed.add_field(name=f"채널 {side}선", value=f"{line_price:,.0f}원", inline=True)
-        embed.set_footer(text="⚠️ 목업 데이터 — 한국투자증권 API 연동 예정")
+        if side == "upper":
+            title  = "📈 채널 상단선 상향 돌파"
+            desc   = "가격이 채널 **상단선을 위로 돌파**했습니다."
+            color  = discord.Color.red()
+            diff   = price - line_price
+            diff_str = f"+{diff:,.0f}원 위"
+        else:
+            title  = "📉 채널 하단선 하향 이탈"
+            desc   = "가격이 채널 **하단선을 아래로 이탈**했습니다."
+            color  = discord.Color.blue()
+            diff   = line_price - price
+            diff_str = f"{diff:,.0f}원 아래"
+
+        embed = discord.Embed(title=title, description=desc, color=color)
+        embed.add_field(name="종목",       value=f"**{name}** ({code})",      inline=True)
+        embed.add_field(name="현재가",     value=f"**{price:,.0f}원**",        inline=True)
+        embed.add_field(name="채널선 가격", value=f"{line_price:,.0f}원",       inline=True)
+        embed.add_field(name="이탈 폭",    value=diff_str,                     inline=True)
+        embed.set_footer(text="⚠️ 목업 데이터 | 쿨타임 1시간")
         try:
             await user.send(embed=embed)
         except discord.Forbidden:

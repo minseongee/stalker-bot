@@ -28,11 +28,6 @@
     #btn-save  { background: #4caf50; color: #fff; }
     #btn-save:disabled, #btn-reset:disabled { background: #333; color: #666; cursor: not-allowed; }
     #btn-reset { background: #3a3f4b; color: #ccc; }
-    #btn-magnet {
-      background: #3a3f4b; color: #ccc; border: 1px solid #555;
-      min-width: 32px;
-    }
-    #btn-magnet.on { background: #ffc107; color: #111; border-color: #ffc107; }
     #help-btn { background: #3a3f4b; color: #888; font-size: 12px; padding: 4px 8px; }
     #status { margin-left: auto; font-size: 12px; color: #aaa; white-space: nowrap; max-width: 400px; overflow: hidden; text-overflow: ellipsis; }
 
@@ -75,7 +70,6 @@
   <button id="btn-draw">채널 그리기</button>
   <button id="btn-save" disabled>저장</button>
   <button id="btn-reset" disabled>초기화</button>
-  <button id="btn-magnet" title="마그넷 (Win: Ctrl / Mac: ⌘)">🧲</button>
   <button id="help-btn" onclick="toggleHelp()">?</button>
   <span id="status">차트를 불러오는 중…</span>
 </div>
@@ -93,8 +87,7 @@
   <div id="panel-body">
     <div id="help-box">
       <b>채널 그리기</b>: [채널 그리기] 클릭 → P1 클릭 → P2 클릭 → 마우스 이동으로 하단 채널 설정 → 클릭 확정 → [저장]<br>
-      <b>채널 수정</b>: 저장된 채널의 P1/P2 점(●)에 마우스를 올리면 노란 점이 나타납니다. 클릭하면 이동 모드 진입 → 원하는 위치 클릭으로 확정. ESC로 취소.<br>
-      <b>마그넷</b>: 🧲 버튼 또는 <b>Win: Ctrl / Mac: ⌘(Cmd)</b> 을 누른 채 클릭하면 가장 가까운 고가·저가·시가·종가에 자동 스냅됩니다.
+      <b>채널 수정</b>: 저장된 채널의 P1/P2 점(●)에 마우스를 올리면 노란 점이 나타납니다. 클릭하면 이동 모드 진입 → 원하는 위치 클릭으로 확정. ESC로 취소.
     </div>
     <div id="channel-list"></div>
     <div id="panel-empty" style="display:none">저장된 채널이 없습니다.</div>
@@ -107,14 +100,10 @@ const params = new URLSearchParams(location.search);
 const TOKEN  = params.get('token') ?? '';
 const CODE   = params.get('code')  ?? '';
 
-// 플랫폼 감지 (Mac: Meta/Cmd, 그 외: Ctrl)
-const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
-
 // ── DOM ──────────────────────────────────────────────────────────────────
 const btnDraw   = document.getElementById('btn-draw');
 const btnSave   = document.getElementById('btn-save');
 const btnReset  = document.getElementById('btn-reset');
-const btnMagnet = document.getElementById('btn-magnet');
 const statusEl  = document.getElementById('status');
 const titleEl   = document.getElementById('stock-title');
 const wrapper   = document.getElementById('chart-wrapper');
@@ -130,14 +119,9 @@ let p1      = null;   // {time, price}
 let p2      = null;
 let offsetY = 0;
 
-// 마그넷
-let magnetOn    = false;
-let snapPoint   = null; // {time, price, label:'H'|'L'|'O'|'C'} — 현재 스냅 위치
-
 // 드로잉 미리보기
-let cursorPos = null; // {time, price} — 실제 찍힐 위치 (스냅 or 원래)
+let cursorPos = null; // {time, price} — 찍힐 위치
 let lastPxPos = null; // {x, y}        — 마지막 raw 픽셀 좌표 (offset 미리보기용)
-let lastCrosshairParam = null; // 마지막 crosshair 파라미터 (Cmd 즉시 스냅 재계산용)
 
 // 편집
 let hoverInfo  = null; // {idx, point:'p1'|'p2', ch}
@@ -150,33 +134,9 @@ let ohlcvData     = {}; // {"YYYY-MM-DD": {open,high,low,close}}
 const PALETTE = ['#4fc3f7','#81c784','#ffb74d','#f06292','#ce93d8','#80cbc4'];
 const HIT_PX  = 12;
 
-// ── 마그넷 키 + 버튼 ──────────────────────────────────────────────────────
-function setMagnet(on) {
-  magnetOn = on;
-  btnMagnet.classList.toggle('on', on);
-  // Cmd/Ctrl 누른 순간 마지막 마우스 위치 기준으로 즉시 스냅 재계산
-  if (on && lastCrosshairParam?.point && lastCrosshairParam?.time) {
-    const p = lastCrosshairParam;
-    const snap = calcSnap(p.time, p.point.y);
-    snapPoint = snap ? { time: p.time, price: snap.price, label: snap.label } : null;
-    cursorPos = snap ? { time: p.time, price: snap.price }
-                     : { time: p.time, price: series.coordinateToPrice(p.point.y) };
-  } else {
-    snapPoint = null;
-  }
-  drawCanvas();
-}
-
 document.addEventListener('keydown', e => {
-  const isModifier = isMac ? e.key === 'Meta' : e.key === 'Control';
-  if (isModifier) setMagnet(true);
   if (e.key === 'Escape') resetDraw(false);
 });
-document.addEventListener('keyup', e => {
-  const isModifier = isMac ? e.key === 'Meta' : e.key === 'Control';
-  if (isModifier) setMagnet(false);
-});
-btnMagnet.addEventListener('click', () => setMagnet(!magnetOn));
 
 // ── Lightweight Charts ────────────────────────────────────────────────────
 const chart = LightweightCharts.createChart(document.getElementById('chart'), {
@@ -296,30 +256,11 @@ btnDraw.addEventListener('click', () => {
     resetDraw(false); state = 'p1';
     btnDraw.textContent = '취소'; btnDraw.classList.add('active');
     btnReset.disabled = false;
-    setStatus('① P1 클릭 (봉의 시/고/저/종에 스냅하려면 🧲 또는 ' + (isMac ? '⌘ Cmd' : 'Ctrl') + ')');
+    setStatus('① 추세선 시작점(P1)을 클릭하세요.');
   } else { resetDraw(false); }
 });
 btnReset.addEventListener('click', () => resetDraw(false));
 btnSave.addEventListener('click', saveChannel);
-
-// ── 마그넷 스냅 계산 ──────────────────────────────────────────────────────
-function calcSnap(time, mouseY) {
-  if (!magnetOn || !time) return null;
-  const key    = timeToKey(time);
-  const candle = ohlcvData[key];
-  if (!candle) return null;
-  const levels = [
-    { price: candle.high,  label: 'H' },
-    { price: candle.low,   label: 'L' },
-    { price: candle.open,  label: 'O' },
-    { price: candle.close, label: 'C' },
-  ];
-  // 픽셀 거리 기준으로 가장 가까운 레벨
-  return levels
-    .map(l => ({ ...l, py: series.priceToCoordinate(l.price) }))
-    .filter(l => l.py !== null)
-    .reduce((a, b) => Math.abs(a.py - mouseY) < Math.abs(b.py - mouseY) ? a : b, null);
-}
 
 // ── 차트 이벤트 ───────────────────────────────────────────────────────────
 chart.subscribeClick(param => { handleClick(param); });
@@ -389,24 +330,14 @@ async function handleClick(param) {
 }
 
 chart.subscribeCrosshairMove(param => {
-  lastCrosshairParam = param; // 항상 최신 파라미터 보관
   if (!param.point) {
     lastPxPos = null;
-    snapPoint = null; cursorPos = null; hoverInfo = null;
+    cursorPos = null; hoverInfo = null;
     editPreview = null; drawCanvas(); return;
   }
-  lastPxPos = { x: param.point.x, y: param.point.y }; // 원시 픽셀 좌표 저장
+  lastPxPos = { x: param.point.x, y: param.point.y };
   const rawPrice = series.coordinateToPrice(param.point.y);
-
-  // 마그넷 스냅 계산 (항상)
-  if (param.time) {
-    const snap = calcSnap(param.time, param.point.y);
-    snapPoint = snap ? { time: param.time, price: snap.price, label: snap.label } : null;
-    cursorPos = snapPoint ? { time: param.time, price: snap.price }
-                          : { time: param.time, price: rawPrice };
-  } else {
-    snapPoint = null; cursorPos = rawPrice !== null ? { time: null, price: rawPrice } : null;
-  }
+  cursorPos = param.time ? { time: param.time, price: rawPrice } : null;
 
   // 편집 미리보기
   if (state === 'edit_point' && cursorPos?.time) {
@@ -499,25 +430,6 @@ function drawCanvas() {
     }
   }
 
-  // 마그넷 스냅 표시
-  if (snapPoint && magnetOn) {
-    const sx = chart.timeScale().timeToCoordinate(snapPoint.time);
-    const sy = series.priceToCoordinate(snapPoint.price);
-    if (sx !== null && sy !== null) {
-      ctx.save();
-      ctx.strokeStyle = '#ffc107'; ctx.lineWidth = 1; ctx.setLineDash([4,4]); ctx.globalAlpha = 0.55;
-      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy); ctx.stroke();
-      ctx.setLineDash([]); ctx.globalAlpha = 1;
-      ctx.fillStyle = '#ffc107'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(sx, sy, 6, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#111'; ctx.font = 'bold 10px monospace';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(snapPoint.label, sx, sy);
-      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-      ctx.restore();
-    }
-  }
-
   // 현재 그리는 채널 + 커서 미리보기
   const drawingActive = state === 'p1' || state === 'p2' || state === 'offset' || state === 'done';
   if (!drawingActive) return;
@@ -603,7 +515,7 @@ async function saveChannel() {
 // ── 초기화 ───────────────────────────────────────────────────────────────
 function resetDraw(keepStatus = false) {
   state = 'idle'; p1=p2=null; offsetY=0;
-  snapPoint=null; cursorPos=null; lastPxPos=null; hoverInfo=null; editTarget=null; editPreview=null;
+  cursorPos=null; lastPxPos=null; hoverInfo=null; editTarget=null; editPreview=null;
   btnDraw.textContent='채널 그리기'; btnDraw.classList.remove('active');
   btnDraw.disabled=false; btnSave.disabled=true; btnReset.disabled=true;
   if (!keepStatus) setStatus('준비. [채널 그리기]를 눌러 시작 | 저장된 채널 앵커 위에 마우스 → 수정 가능');

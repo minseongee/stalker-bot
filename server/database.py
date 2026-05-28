@@ -154,27 +154,26 @@ def delete_channel(channel_id: int, user_id: str) -> bool:
 
 # ── alerts ───────────────────────────────────────────────────────────────────
 
+ALERT_COOLDOWN = 3600  # 1시간
+
+
 def already_alerted(channel_id: int, side: str) -> bool:
+    """마지막 알림이 쿨타임(1시간) 이내면 True."""
+    now = int(time.time())
     with _conn() as conn:
         row = conn.execute(
-            "SELECT 1 FROM alerts WHERE channel_id = ? AND side = ?",
+            "SELECT fired_at FROM alerts WHERE channel_id = ? AND side = ?",
             (channel_id, side),
         ).fetchone()
-        return row is not None
+        if row is None:
+            return False
+        return (now - row["fired_at"]) < ALERT_COOLDOWN
 
 
 def record_alert(channel_id: int, side: str) -> None:
+    """알림 기록 (같은 채널·방향이면 타임스탬프 갱신)."""
     with _conn() as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO alerts (channel_id, side, fired_at) VALUES (?,?,?)",
+            "INSERT OR REPLACE INTO alerts (channel_id, side, fired_at) VALUES (?,?,?)",
             (channel_id, side, int(time.time())),
-        )
-
-
-def clear_alert(channel_id: int, side: str) -> None:
-    """가격이 채널 안으로 돌아오면 알림 리셋 (재알림 허용)."""
-    with _conn() as conn:
-        conn.execute(
-            "DELETE FROM alerts WHERE channel_id = ? AND side = ?",
-            (channel_id, side),
         )
