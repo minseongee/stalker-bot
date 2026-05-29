@@ -126,7 +126,7 @@ class StockSearchModal(discord.ui.Modal, title="주식 차트 조회"):
         await interaction.followup.send(
             embed=embed,
             file=discord.File(buf, filename="chart.png"),
-            view=ChartResultView(raw),
+            view=ChartResultView(raw, str(interaction.user.id)),
             ephemeral=True,
         )
 
@@ -134,23 +134,39 @@ class StockSearchModal(discord.ui.Modal, title="주식 차트 조회"):
 # ── 차트 결과 View ────────────────────────────────────────────────────────────
 
 class ChartResultView(discord.ui.View):
-    def __init__(self, stock_code: str):
+    def __init__(self, stock_code: str, user_id: str):
         super().__init__(timeout=300)
         self.stock_code = stock_code
+        self.user_id    = user_id
 
-    @discord.ui.button(label="⭐ 관심 종목 추가", style=discord.ButtonStyle.secondary)
-    async def add_watchlist(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        user_id = str(interaction.user.id)
-        added = add_to_watchlist(user_id, self.stock_code)
-        name  = DUMMY_STOCKS.get(self.stock_code, {}).get("name", self.stock_code)
-        if added:
-            msg = f"✅ **{name}** ({self.stock_code})을 관심 종목에 추가했습니다!"
+        # 관심 종목 버튼 — 현재 상태에 따라 동적으로 생성
+        in_wl = stock_code in get_watchlist(user_id)
+        wl_btn = discord.ui.Button(
+            label="★ 관심 종목 제거" if in_wl else "⭐ 관심 종목 추가",
+            style=discord.ButtonStyle.danger if in_wl else discord.ButtonStyle.secondary,
+        )
+        wl_btn.callback = self._toggle_watchlist
+        self.add_item(wl_btn)
+
+        # 차트수정 버튼
+        edit_btn = discord.ui.Button(label="✏️ 차트수정", style=discord.ButtonStyle.secondary)
+        edit_btn.callback = self._edit_chart
+        self.add_item(edit_btn)
+
+    async def _toggle_watchlist(self, interaction: discord.Interaction):
+        uid  = str(interaction.user.id)
+        name = DUMMY_STOCKS.get(self.stock_code, {}).get("name", self.stock_code)
+        if self.stock_code in get_watchlist(uid):
+            remove_from_watchlist(uid, self.stock_code)
+            msg = f"★ **{name}** ({self.stock_code})을 관심 종목에서 제거했습니다."
         else:
-            msg = f"이미 관심 종목에 있는 종목입니다: **{name}** ({self.stock_code})"
-        await interaction.response.send_message(msg, ephemeral=True)
+            add_to_watchlist(uid, self.stock_code)
+            msg = f"⭐ **{name}** ({self.stock_code})을 관심 종목에 추가했습니다!"
+        # 버튼 상태 갱신 (embed·첨부 파일은 유지)
+        await interaction.response.edit_message(view=ChartResultView(self.stock_code, uid))
+        await interaction.followup.send(msg, ephemeral=True)
 
-    @discord.ui.button(label="✏️ 차트수정", style=discord.ButtonStyle.secondary)
-    async def edit_chart(self, interaction: discord.Interaction, _button: discord.ui.Button):
+    async def _edit_chart(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
             async with aiohttp.ClientSession() as session:
