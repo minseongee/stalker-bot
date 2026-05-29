@@ -138,6 +138,17 @@ class ChartResultView(discord.ui.View):
         super().__init__(timeout=300)
         self.stock_code = stock_code
 
+    @discord.ui.button(label="⭐ 관심 종목 추가", style=discord.ButtonStyle.secondary)
+    async def add_watchlist(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        user_id = str(interaction.user.id)
+        added = add_to_watchlist(user_id, self.stock_code)
+        name  = DUMMY_STOCKS.get(self.stock_code, {}).get("name", self.stock_code)
+        if added:
+            msg = f"✅ **{name}** ({self.stock_code})을 관심 종목에 추가했습니다!"
+        else:
+            msg = f"이미 관심 종목에 있는 종목입니다: **{name}** ({self.stock_code})"
+        await interaction.response.send_message(msg, ephemeral=True)
+
     @discord.ui.button(label="✏️ 차트수정", style=discord.ButtonStyle.secondary)
     async def edit_chart(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True, thinking=True)
