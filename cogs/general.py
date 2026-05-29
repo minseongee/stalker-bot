@@ -285,25 +285,6 @@ class WatchlistView(discord.ui.View):
         embed = _build_watchlist_embed(str(interaction.user.id))
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="← 메인", style=discord.ButtonStyle.secondary)
-    async def back(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        await interaction.response.edit_message(
-            embed=_build_dashboard_embed(), view=StockView()
-        )
-
-
-# ── 뉴스 View (뒤로가기만) ─────────────────────────────────────────────────────
-
-class NewsView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="← 메인", style=discord.ButtonStyle.secondary)
-    async def back(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        await interaction.response.edit_message(
-            embed=_build_dashboard_embed(), view=StockView()
-        )
-
 
 # ── 메인 대시보드 View ────────────────────────────────────────────────────────
 
@@ -311,26 +292,25 @@ class StockView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="주식 검색", style=discord.ButtonStyle.primary, emoji="🔍")
+    @discord.ui.button(label="주식 검색", style=discord.ButtonStyle.primary, emoji="🔍", custom_id="stock:search")
     async def search_stock(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await interaction.response.send_modal(StockSearchModal())
 
-    @discord.ui.button(label="관심 종목", style=discord.ButtonStyle.secondary, emoji="⭐")
+    @discord.ui.button(label="관심 종목", style=discord.ButtonStyle.secondary, emoji="⭐", custom_id="stock:watchlist")
     async def watchlist(self, interaction: discord.Interaction, _button: discord.ui.Button):
         embed = _build_watchlist_embed(str(interaction.user.id))
-        await interaction.response.edit_message(embed=embed, view=WatchlistView(str(interaction.user.id)))
+        await interaction.response.send_message(
+            embed=embed, view=WatchlistView(str(interaction.user.id)), ephemeral=True
+        )
 
-    @discord.ui.button(label="시장 뉴스", style=discord.ButtonStyle.secondary, emoji="📰")
+    @discord.ui.button(label="시장 뉴스", style=discord.ButtonStyle.secondary, emoji="📰", custom_id="stock:news")
     async def news(self, interaction: discord.Interaction, _button: discord.ui.Button):
         if _news_loading or _news_embed is None:
-            loading_embed = discord.Embed(
-                title="📰 시장 뉴스",
-                description="⏳ 뉴스를 갱신하는 중입니다. 잠시 후 다시 시도해주세요.",
-                color=discord.Color.greyple(),
+            await interaction.response.send_message(
+                "⏳ 뉴스를 갱신하는 중입니다. 잠시 후 다시 시도해주세요.", ephemeral=True
             )
-            await interaction.response.edit_message(embed=loading_embed, view=NewsView())
             return
-        await interaction.response.edit_message(embed=_news_embed, view=NewsView())
+        await interaction.response.send_message(embed=_news_embed, ephemeral=True)
 
 
 # ── Cog ──────────────────────────────────────────────────────────────────────
@@ -382,13 +362,19 @@ class General(commands.Cog):
     async def before_refresh(self):
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name="주식", description="나만의 주식 어시스턴트 대시보드를 엽니다.")
+    @app_commands.command(name="주식", description="주식 어시스턴트 대시보드를 채널에 고정합니다. (관리자 전용)")
+    @app_commands.checks.has_permissions(administrator=True)
     async def stock_menu(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            embed=_build_dashboard_embed(),
-            view=StockView(),
-            ephemeral=True,
+            embed=_build_dashboard_embed(), view=StockView()
         )
+
+    @stock_menu.error
+    async def stock_menu_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message(
+                "이 명령어는 서버 관리자만 사용할 수 있습니다.", ephemeral=True
+            )
 
     @commands.Cog.listener()
     async def on_ready(self):
