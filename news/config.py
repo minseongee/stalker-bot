@@ -2,7 +2,7 @@ import os
 
 # ── RSS 피드 설정 ─────────────────────────────────────────────────────────────
 RSS_FEEDS = [
-    {"source": "연합뉴스",  "url": "https://www.yonhapnewstv.co.kr/feed/"},
+    {"source": "연합뉴스",  "url": "https://www.yna.co.kr/rss/economy.xml"},
     {"source": "한국경제",  "url": "https://www.hankyung.com/feed/economy"},
     {"source": "매일경제",  "url": "https://www.mk.co.kr/rss/40300001/"},
 ]
