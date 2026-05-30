@@ -29,15 +29,6 @@ def _build_dashboard_embed() -> discord.Embed:
     )
     embed.add_field(name="🔍 주식 검색", value="종목 코드를 입력하면 캔들스틱 차트와 시세를 조회합니다.", inline=False)
     embed.add_field(name="⭐ 관심 종목", value="나만의 관심 종목 목록을 관리합니다.", inline=False)
-    embed.add_field(name="📰 시장 뉴스", value="최신 주식 시장 뉴스를 확인합니다.", inline=False)
-    news_ts = get_cache_time_kst()
-    if _news_loading:
-        footer = "뉴스 갱신 중..."
-    elif news_ts:
-        footer = f"뉴스 마지막 갱신: {news_ts}"
-    else:
-        footer = "뉴스 아직 로드되지 않음"
-    embed.set_footer(text=footer)
     return embed
 
 
@@ -359,14 +350,6 @@ class StockView(discord.ui.View):
             embed=embed, view=WatchlistView(str(interaction.user.id)), ephemeral=True
         )
 
-    @discord.ui.button(label="시장 뉴스", style=discord.ButtonStyle.secondary, emoji="📰", custom_id="stock:news")
-    async def news(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        if _news_loading or _news_embed is None:
-            await interaction.response.send_message(
-                "⏳ 뉴스를 갱신하는 중입니다. 잠시 후 다시 시도해주세요.", ephemeral=True
-            )
-            return
-        await interaction.response.send_message(embed=_news_embed, ephemeral=True)
 
 
 # ── Cog ──────────────────────────────────────────────────────────────────────
