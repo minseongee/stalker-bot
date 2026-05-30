@@ -39,6 +39,7 @@ async def refine_cluster(cluster_id: str, items: list[dict]) -> dict | None:
     )
     user_msg = f"다음 기사들을 분석하세요:\n\n{articles_text}"
 
+    print(f"[Refiner] GPT 호출 중… (기사 {len(items)}건)")
     try:
         resp = await _get_client().responses.create(
             model="gpt-5.4-mini",
@@ -56,8 +57,9 @@ async def refine_cluster(cluster_id: str, items: list[dict]) -> dict | None:
                 raw = raw[4:]
         result = json.loads(raw)
     except Exception as e:
-        print(f"[Refiner] cluster {cluster_id} GPT 호출 실패: {e}")
+        print(f"[Refiner] GPT 호출 실패: {e}")
         return None
+    print(f"[Refiner] 완료 → {result.get('headline', '')}")
 
     sources = [
         {"source": it["source"], "url": it["url"]}
