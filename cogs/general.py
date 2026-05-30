@@ -7,7 +7,10 @@ from discord.ext import commands, tasks
 from discord import app_commands
 from utils.summarizer import summarize_news, get_cached_news, get_cache_time_kst
 from utils.chart import fetch_chart, supported_codes
-from server.database import get_watchlist, add_to_watchlist, remove_from_watchlist
+from server.database import (
+    get_watchlist, add_to_watchlist, remove_from_watchlist,
+    set_news_channel, get_all_news_channels, update_news_message_id,
+)
 from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
 
 SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
@@ -398,6 +401,7 @@ class General(commands.Cog):
             if embed:
                 _news_embed = embed
                 print("[뉴스] _news_embed 설정 완료")
+                await self._broadcast_news(embed)
             else:
                 print("[뉴스] embed 생성 실패 — summary가 비어있음")
         except Exception:
@@ -405,6 +409,27 @@ class General(commands.Cog):
             traceback.print_exc()
         finally:
             _news_loading = False
+
+    async def _broadcast_news(self, embed: discord.Embed) -> None:
+        for row in get_all_news_channels():
+            ch = self.bot.get_channel(int(row["channel_id"]))
+            if ch is None:
+                continue
+            # 이전 메시지가 있으면 편집, 없으면 새로 전송
+            if row.get("message_id"):
+                try:
+                    msg = await ch.fetch_message(int(row["message_id"]))
+                    await msg.edit(embed=embed)
+                    print(f"[뉴스] 채널 {row['channel_id']} 메시지 편집 완료")
+                    continue
+                except Exception:
+                    pass  # 메시지가 삭제됐으면 새로 전송
+            try:
+                msg = await ch.send(embed=embed)
+                update_news_message_id(row["guild_id"], str(msg.id))
+                print(f"[뉴스] 채널 {row['channel_id']} 새 메시지 전송 완료")
+            except Exception as e:
+                print(f"[뉴스] 채널 {row['channel_id']} 전송 실패: {e}")
 
     @refresh_news.error
     async def on_refresh_error(self, error: Exception):
@@ -414,6 +439,31 @@ class General(commands.Cog):
     @refresh_news.before_loop
     async def before_refresh(self):
         await self.bot.wait_until_ready()
+
+    @app_commands.command(name="뉴스", description="이 채널을 뉴스 자동 공유 채널로 지정합니다. (관리자 전용)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_news_ch(self, interaction: discord.Interaction):
+        if interaction.guild is None:
+            await interaction.response.send_message("서버 채널에서만 사용할 수 있습니다.", ephemeral=True)
+            return
+        set_news_channel(str(interaction.guild_id), str(interaction.channel_id))
+        await interaction.response.send_message(
+            f"✅ <#{interaction.channel_id}>을 뉴스 자동 공유 채널로 지정했습니다.\n"
+            "매시간 뉴스가 갱신되면 이 채널에 자동으로 공유됩니다.",
+            ephemeral=True,
+        )
+        # 지정 즉시 현재 뉴스 전송
+        if _news_embed:
+            try:
+                msg = await interaction.channel.send(embed=_news_embed)
+                update_news_message_id(str(interaction.guild_id), str(msg.id))
+            except Exception as e:
+                print(f"[뉴스] 즉시 전송 실패: {e}")
+
+    @set_news_ch.error
+    async def set_news_ch_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message("이 명령어는 서버 관리자만 사용할 수 있습니다.", ephemeral=True)
 
     @app_commands.command(name="주식", description="주식 어시스턴트 대시보드를 채널에 고정합니다. (관리자 전용)")
     @app_commands.checks.has_permissions(administrator=True)

@@ -39,6 +39,13 @@ CREATE TABLE IF NOT EXISTS alerts (
     fired_at   INTEGER NOT NULL,
     UNIQUE(channel_id, side)      -- 같은 채널·방향 중복 알림 방지
 );
+
+CREATE TABLE IF NOT EXISTS news_channels (
+    guild_id   TEXT    PRIMARY KEY,
+    channel_id TEXT    NOT NULL,
+    message_id TEXT,              -- 마지막으로 전송한 메시지 ID (편집용)
+    set_at     INTEGER NOT NULL
+);
 """
 
 
@@ -178,6 +185,34 @@ def delete_channel(channel_id: int, user_id: str) -> bool:
             (channel_id, user_id),
         )
         return cur.rowcount > 0
+
+
+# ── news_channels ────────────────────────────────────────────────────────────
+
+def set_news_channel(guild_id: str, channel_id: str) -> None:
+    with _conn() as conn:
+        conn.execute(
+            """INSERT INTO news_channels (guild_id, channel_id, message_id, set_at)
+               VALUES (?,?,NULL,?)
+               ON CONFLICT(guild_id) DO UPDATE SET channel_id=excluded.channel_id,
+                                                    message_id=NULL,
+                                                    set_at=excluded.set_at""",
+            (guild_id, channel_id, int(time.time())),
+        )
+
+
+def get_all_news_channels() -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute("SELECT * FROM news_channels").fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_news_message_id(guild_id: str, message_id: str) -> None:
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE news_channels SET message_id=? WHERE guild_id=?",
+            (message_id, guild_id),
+        )
 
 
 # ── watchlist ────────────────────────────────────────────────────────────────
