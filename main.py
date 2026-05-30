@@ -15,6 +15,10 @@ async def on_ready():
     guild_id = os.getenv("GUILD_ID")
     if guild_id:
         guild = discord.Object(id=int(guild_id))
+        # 전역 명령어 제거 (중복 방지)
+        bot.tree.clear_commands(guild=None)
+        await bot.tree.sync()
+        # 길드에 즉시 등록
         bot.tree.copy_global_to(guild=guild)
         await bot.tree.sync(guild=guild)
         print(f"[Bot] 길드 {guild_id} 슬래시 커맨드 즉시 동기화 완료")
