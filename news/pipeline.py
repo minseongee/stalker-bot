@@ -40,12 +40,12 @@ async def _run_once() -> None:
             inserted.append(item)
 
     from datetime import datetime, timezone, timedelta
+    from .config import RSS_FEEDS
     kst = datetime.now(timezone(timedelta(hours=9))).strftime("%H:%M:%S")
     per_source = {}
     for item in new_items:
         per_source[item["source"]] = per_source.get(item["source"], 0) + 1
-    rss_sources = ["연합뉴스", "한국경제", "매일경제"]
-    rss_str = " | ".join(f"{s} {per_source.get(s, 0)}건" for s in rss_sources)
+    rss_str = " | ".join(f"{f['source']} {per_source.get(f['source'], 0)}건" for f in RSS_FEEDS)
     dart_str = f"DART {per_source.get('DART', 0)}건"
     print(f"[{kst}] [뉴스수집] 총 {len(new_items)}건 (신규 {len(inserted)}건) — {rss_str} | {dart_str}")
 

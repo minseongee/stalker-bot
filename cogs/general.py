@@ -408,7 +408,11 @@ class General(commands.Cog):
                 color=discord.Color.green(),
             )
             embed.set_footer(text=f"마지막 업데이트: {get_cache_time_kst() or '-'}")
-            for row in get_news_channels_by_type("briefing"):
+            briefing_channels = get_news_channels_by_type("briefing")
+            if not briefing_channels:
+                print("[브리핑] 채널 미배정 — /브리핑채널 명령어로 채널을 지정해주세요.")
+                return
+            for row in briefing_channels:
                 ch = self.bot.get_channel(int(row["channel_id"]))
                 if ch is None:
                     continue
@@ -441,6 +445,7 @@ class General(commands.Cog):
             ch_type = "dart" if is_dart else "hot"
             channels = get_news_channels_by_type(ch_type)
             if not channels:
+                print(f"[{ch_type.upper()}] 채널 미배정 — /{'dart채널' if is_dart else '핫뉴스채널'} 명령어로 채널을 지정해주세요.")
                 continue
 
             embed = _build_hot_embed(news)
