@@ -16,7 +16,7 @@ from utils.summarizer import (
 from utils.chart import fetch_chart, supported_codes
 from server.database import (
     get_watchlist, add_to_watchlist, remove_from_watchlist,
-    set_news_channel, get_all_news_channels,
+    set_news_channel, get_news_channels_by_type,
 )
 from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
 
@@ -408,7 +408,7 @@ class General(commands.Cog):
                 color=discord.Color.green(),
             )
             embed.set_footer(text=f"마지막 업데이트: {get_cache_time_kst() or '-'}")
-            for row in get_all_news_channels():
+            for row in get_news_channels_by_type("briefing"):
                 ch = self.bot.get_channel(int(row["channel_id"]))
                 if ch is None:
                     continue
@@ -431,7 +431,7 @@ class General(commands.Cog):
 
     async def _broadcast_hot_news(self, refined_list: list[dict]) -> None:
         global _last_broadcast_cluster_ids
-        channels = get_all_news_channels()
+        channels = get_news_channels_by_type("hot")
         if not channels:
             return
         for news in refined_list:
@@ -450,16 +450,16 @@ class General(commands.Cog):
                 except Exception as e:
                     print(f"[뉴스] 채널 {row['channel_id']} 전송 실패: {e}")
 
-    @app_commands.command(name="뉴스", description="이 채널을 뉴스 자동 공유 채널로 지정합니다. (관리자 전용)")
+    @app_commands.command(name="핫뉴스채널", description="이 채널을 실시간 핫뉴스 채널로 지정합니다. (관리자 전용)")
     @app_commands.checks.has_permissions(administrator=True)
-    async def set_news_ch(self, interaction: discord.Interaction):
+    async def set_hot_ch(self, interaction: discord.Interaction):
         if interaction.guild is None:
             await interaction.response.send_message("서버 채널에서만 사용할 수 있습니다.", ephemeral=True)
             return
-        set_news_channel(str(interaction.guild_id), str(interaction.channel_id))
+        set_news_channel(str(interaction.guild_id), str(interaction.channel_id), "hot")
         await interaction.response.send_message(
-            f"✅ <#{interaction.channel_id}>을 뉴스 자동 공유 채널로 지정했습니다.\n"
-            "매시간 뉴스가 갱신되면 이 채널에 자동으로 공유됩니다.",
+            f"✅ <#{interaction.channel_id}>을 **실시간 핫뉴스** 채널로 지정했습니다.\n"
+            "hot_score 기준을 넘는 뉴스가 발생하면 즉시 전송됩니다.",
             ephemeral=True,
         )
         # 지정 즉시 최근 핫뉴스 전송
@@ -469,10 +469,28 @@ class General(commands.Cog):
                 try:
                     await interaction.channel.send(embed=_build_hot_embed(news))
                 except Exception as e:
-                    print(f"[뉴스] 즉시 전송 실패: {e}")
+                    print(f"[핫뉴스] 즉시 전송 실패: {e}")
 
-    @set_news_ch.error
-    async def set_news_ch_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+    @set_hot_ch.error
+    async def set_hot_ch_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message("이 명령어는 서버 관리자만 사용할 수 있습니다.", ephemeral=True)
+
+    @app_commands.command(name="브리핑채널", description="이 채널을 하루 4회 시장 브리핑 채널로 지정합니다. (관리자 전용)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_briefing_ch(self, interaction: discord.Interaction):
+        if interaction.guild is None:
+            await interaction.response.send_message("서버 채널에서만 사용할 수 있습니다.", ephemeral=True)
+            return
+        set_news_channel(str(interaction.guild_id), str(interaction.channel_id), "briefing")
+        await interaction.response.send_message(
+            f"✅ <#{interaction.channel_id}>을 **시장 브리핑** 채널로 지정했습니다.\n"
+            "08:00 / 12:00 / 16:00 / 21:00 KST에 시장 요약이 전송됩니다.",
+            ephemeral=True,
+        )
+
+    @set_briefing_ch.error
+    async def set_briefing_ch_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         if isinstance(error, app_commands.MissingPermissions):
             await interaction.response.send_message("이 명령어는 서버 관리자만 사용할 수 있습니다.", ephemeral=True)
 

@@ -41,9 +41,11 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 
 CREATE TABLE IF NOT EXISTS news_channels (
-    guild_id   TEXT    PRIMARY KEY,
-    channel_id TEXT    NOT NULL,
-    set_at     INTEGER NOT NULL
+    guild_id     TEXT    NOT NULL,
+    channel_type TEXT    NOT NULL DEFAULT 'briefing',
+    channel_id   TEXT    NOT NULL,
+    set_at       INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, channel_type)
 );
 
 CREATE TABLE IF NOT EXISTS news_items (
@@ -86,6 +88,27 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE channels ADD COLUMN alert_enabled INTEGER NOT NULL DEFAULT 1")
+        except Exception:
+            pass
+        # news_channels 스키마 마이그레이션: guild_id 단일 PK → (guild_id, channel_type) 복합 PK
+        try:
+            pk_cols = [r[5] for r in conn.execute("PRAGMA table_info(news_channels)").fetchall() if r[5] > 0]
+            if len(pk_cols) < 2:  # 복합 PK가 아닌 경우 재생성
+                conn.execute("""
+                    CREATE TABLE news_channels_new (
+                        guild_id     TEXT    NOT NULL,
+                        channel_type TEXT    NOT NULL DEFAULT 'briefing',
+                        channel_id   TEXT    NOT NULL,
+                        set_at       INTEGER NOT NULL,
+                        PRIMARY KEY (guild_id, channel_type)
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO news_channels_new (guild_id, channel_type, channel_id, set_at)
+                    SELECT guild_id, 'briefing', channel_id, set_at FROM news_channels
+                """)
+                conn.execute("DROP TABLE news_channels")
+                conn.execute("ALTER TABLE news_channels_new RENAME TO news_channels")
         except Exception:
             pass
 
@@ -217,15 +240,24 @@ def delete_channel(channel_id: int, user_id: str) -> bool:
 
 # ── news_channels ────────────────────────────────────────────────────────────
 
-def set_news_channel(guild_id: str, channel_id: str) -> None:
+def set_news_channel(guild_id: str, channel_id: str, channel_type: str = "briefing") -> None:
     with _conn() as conn:
         conn.execute(
-            """INSERT INTO news_channels (guild_id, channel_id, set_at)
-               VALUES (?,?,?)
-               ON CONFLICT(guild_id) DO UPDATE SET channel_id=excluded.channel_id,
-                                                    set_at=excluded.set_at""",
-            (guild_id, channel_id, int(time.time())),
+            """INSERT INTO news_channels (guild_id, channel_type, channel_id, set_at)
+               VALUES (?,?,?,?)
+               ON CONFLICT(guild_id, channel_type) DO UPDATE SET
+                 channel_id=excluded.channel_id,
+                 set_at=excluded.set_at""",
+            (guild_id, channel_type, channel_id, int(time.time())),
         )
+
+
+def get_news_channels_by_type(channel_type: str) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM news_channels WHERE channel_type = ?", (channel_type,)
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_all_news_channels() -> list[dict]:
