@@ -1,16 +1,7 @@
 """GPT 요약 정제 — 기존 AsyncOpenAI 클라이언트·gpt-5.4-mini 재사용."""
 import json
 
-from openai import AsyncOpenAI
-
-_client: AsyncOpenAI | None = None
-
-
-def _get_client() -> AsyncOpenAI:
-    global _client
-    if _client is None:
-        _client = AsyncOpenAI()
-    return _client
+from utils.openai_client import get_openai_client
 
 
 # 프롬프트는 여기서 수정
@@ -41,7 +32,7 @@ async def refine_cluster(cluster_id: str, items: list[dict]) -> dict | None:
 
     print(f"[Refiner] GPT 호출 중… (기사 {len(items)}건)")
     try:
-        resp = await _get_client().responses.create(
+        resp = await get_openai_client().responses.create(
             model="gpt-5.4-mini",
             input=[
                 {"role": "system", "content": _SYSTEM_PROMPT},

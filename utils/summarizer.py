@@ -2,19 +2,10 @@ import json
 import time
 from datetime import datetime, timezone, timedelta
 
-from openai import AsyncOpenAI
-
 from server.database import get_hot_news, get_latest_hot_news_time, get_recent_news_items
+from utils.openai_client import get_openai_client
 
 _KST = timezone(timedelta(hours=9))
-
-_client: AsyncOpenAI | None = None
-
-def _get_client() -> AsyncOpenAI:
-    global _client
-    if _client is None:
-        _client = AsyncOpenAI()
-    return _client
 
 _BRIEFING_PROMPT = """당신은 한국 주식 시장 전문 기자입니다.
 아래 기사 목록을 바탕으로 오늘의 시장 동향을 신문 브리핑 형식으로 작성해주세요.
@@ -65,7 +56,7 @@ async def summarize_market_briefing(window_hours: int = 6) -> str | None:
     user_msg = f"최근 {window_hours}시간 기사 목록:\n{articles}"
 
     try:
-        resp = await _get_client().responses.create(
+        resp = await get_openai_client().responses.create(
             model="gpt-5.4-mini",
             input=[
                 {"role": "system", "content": _BRIEFING_PROMPT},

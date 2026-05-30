@@ -31,6 +31,7 @@ _NEWS_TIMES = [
 ]
 
 _last_broadcast_cluster_ids: set[str] = set()  # 중복 브로드캐스트 방지
+_BROADCAST_ID_LIMIT = 1000  # 메모리 누수 방지 상한
 
 
 # ── 임베드 빌더 ──────────────────────────────────────────────────────────────
@@ -440,6 +441,9 @@ class General(commands.Cog):
             if cid in _last_broadcast_cluster_ids:
                 continue
             _last_broadcast_cluster_ids.add(cid)
+            if len(_last_broadcast_cluster_ids) > _BROADCAST_ID_LIMIT:
+                oldest = next(iter(_last_broadcast_cluster_ids))
+                _last_broadcast_cluster_ids.discard(oldest)
 
             is_dart = any(s.get("source") == "DART" for s in news.get("sources", []))
             channels = get_news_channels_by_type("dart") if is_dart else []

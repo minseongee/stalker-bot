@@ -14,9 +14,17 @@ echo "[서버] FastAPI 시작 중... (http://localhost:8000)"
 python3 -m uvicorn server.app:app --host 0.0.0.0 --port 8000 &
 SERVER_PID=$!
 
-# 서버가 뜰 때까지 잠깐 대기
-sleep 1
-echo "[서버] PID $SERVER_PID — 실행 중"
+# 서버가 실제로 응답할 때까지 대기 (최대 10초)
+for i in $(seq 1 10); do
+    if curl -s http://localhost:8000/docs > /dev/null 2>&1; then
+        echo "[서버] PID $SERVER_PID — 준비 완료 (${i}초)"
+        break
+    fi
+    sleep 1
+    if [ $i -eq 10 ]; then
+        echo "[서버] 경고: 서버 응답 없음, 봇 시작 진행"
+    fi
+done
 echo ""
 
 # Discord 봇을 포그라운드에서 실행

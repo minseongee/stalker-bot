@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 import asyncio
+import traceback
 import dotenv
 
 dotenv.load_dotenv()
@@ -36,8 +37,18 @@ async def main():
         from news.pipeline import run_loop
         from server.app import push_hot_news
         from news.pipeline import register_hot_callback
-        register_hot_callback(push_hot_news)  # SSE 구독자에게도 전달
-        asyncio.create_task(run_loop())
+        register_hot_callback(push_hot_news)
+
+        async def _pipeline_with_restart():
+            while True:
+                try:
+                    await run_loop()
+                except Exception:
+                    traceback.print_exc()
+                    print("[Pipeline] 태스크 예외 종료 — 5초 후 재시작")
+                    await asyncio.sleep(5)
+
+        asyncio.create_task(_pipeline_with_restart())
         print("[Pipeline] 뉴스 수집 태스크 시작")
         await bot.start(os.getenv("DISCORD_TOKEN"))
 

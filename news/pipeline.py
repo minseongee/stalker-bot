@@ -2,6 +2,7 @@
 import asyncio
 import json
 import time
+import traceback
 from typing import Callable
 
 from server.database import (
@@ -48,6 +49,9 @@ async def _run_once() -> None:
     rss_str = " | ".join(f"{f['source']} {per_source.get(f['source'], 0)}건" for f in RSS_FEEDS)
     dart_str = f"DART {per_source.get('DART', 0)}건"
     print(f"[{kst}] [뉴스수집] 총 {len(new_items)}건 (신규 {len(inserted)}건) — {rss_str} | {dart_str}")
+
+    if not inserted:
+        return  # 신규 기사 없으면 클러스터링 불필요
 
     # 2) 클러스터링 (최근 6시간 기사 전체 대상으로 재계산)
     since = int(time.time()) - 3600 * 6
@@ -135,4 +139,5 @@ async def run_loop() -> None:
             await _run_once()
         except Exception as e:
             print(f"[Pipeline] 루프 오류: {e}")
+            traceback.print_exc()
         await asyncio.sleep(POLL_INTERVAL)
