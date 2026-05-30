@@ -9,7 +9,7 @@ from utils.summarizer import summarize_news, get_cached_news, get_cache_time_kst
 from utils.chart import fetch_chart, supported_codes
 from server.database import (
     get_watchlist, add_to_watchlist, remove_from_watchlist,
-    set_news_channel, get_all_news_channels, update_news_message_id,
+    set_news_channel, get_all_news_channels,
 )
 from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
 
@@ -415,19 +415,9 @@ class General(commands.Cog):
             ch = self.bot.get_channel(int(row["channel_id"]))
             if ch is None:
                 continue
-            # 이전 메시지가 있으면 편집, 없으면 새로 전송
-            if row.get("message_id"):
-                try:
-                    msg = await ch.fetch_message(int(row["message_id"]))
-                    await msg.edit(embed=embed)
-                    print(f"[뉴스] 채널 {row['channel_id']} 메시지 편집 완료")
-                    continue
-                except Exception:
-                    pass  # 메시지가 삭제됐으면 새로 전송
             try:
-                msg = await ch.send(embed=embed)
-                update_news_message_id(row["guild_id"], str(msg.id))
-                print(f"[뉴스] 채널 {row['channel_id']} 새 메시지 전송 완료")
+                await ch.send(embed=embed)
+                print(f"[뉴스] 채널 {row['channel_id']} 전송 완료")
             except Exception as e:
                 print(f"[뉴스] 채널 {row['channel_id']} 전송 실패: {e}")
 
@@ -455,8 +445,7 @@ class General(commands.Cog):
         # 지정 즉시 현재 뉴스 전송
         if _news_embed:
             try:
-                msg = await interaction.channel.send(embed=_news_embed)
-                update_news_message_id(str(interaction.guild_id), str(msg.id))
+                await interaction.channel.send(embed=_news_embed)
             except Exception as e:
                 print(f"[뉴스] 즉시 전송 실패: {e}")
 
