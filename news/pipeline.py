@@ -7,8 +7,6 @@ from typing import Callable
 from server.database import (
     get_cluster_items,
     get_recent_news_items,
-    get_unrefined_hot_clusters,
-    mark_cluster_refined,
     update_news_cluster,
     update_news_refined,
     upsert_cluster,
@@ -85,13 +83,13 @@ async def _run_once() -> None:
         return
 
     # 4) 핫 클러스터 중 미정제 건만 GPT 정제
-    unrefined = get_unrefined_hot_clusters()
-    unrefined_ids = {r["cluster_id"] for r in unrefined}
-    to_refine = [cid for cid in hot_cluster_ids if cid in unrefined_ids]
-
+    # cluster_id는 매 사이클마다 새 UUID라서 news_clusters로는 중복 방지 불가.
+    # 기사 레벨에서 summary 존재 여부로 판단한다.
     newly_refined: list[dict] = []
-    for cid in to_refine:
+    for cid in hot_cluster_ids:
         items_in_cluster = get_cluster_items(cid)
+        if any(item.get("summary") for item in items_in_cluster):
+            continue  # 이미 정제된 기사가 있으면 GPT 재호출 안 함
         refined = await refine_cluster(cid, items_in_cluster)
         if refined is None:
             continue
