@@ -81,12 +81,14 @@ async def _fetch_rss(session: aiohttp.ClientSession, feed: dict) -> list[dict]:
 async def _fetch_dart(session: aiohttp.ClientSession) -> list[dict]:
     if not DART_API_KEY:
         return []
+    today = time.strftime("%Y%m%d")
     params = {
-        "crtfc_key": DART_API_KEY,
-        "page_no":   "1",
+        "crtfc_key":  DART_API_KEY,
+        "bgn_de":     today,
+        "page_no":    "1",
         "page_count": "20",
-        "sort":      "date",
-        "sort_mth":  "desc",
+        "sort":       "date",
+        "sort_mth":   "desc",
     }
     try:
         async with session.get(DART_ENDPOINT, params=params, timeout=_TIMEOUT) as resp:
