@@ -70,6 +70,7 @@ async def _run_once() -> None:
             cluster_id=cid,
             titles=titles,
             source_count=meta["source_count"],
+            sources=list(meta["sources"]),
         )
         score = compute_hot_score(sig)
         hot = is_hot(score)
