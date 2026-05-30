@@ -45,6 +45,14 @@ CREATE TABLE IF NOT EXISTS alerts (
 def init_db() -> None:
     with _conn() as conn:
         conn.executescript(_SCHEMA)
+        try:
+            conn.execute("ALTER TABLE channels ADD COLUMN channel_type TEXT NOT NULL DEFAULT 'normal'")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE channels ADD COLUMN alert_enabled INTEGER NOT NULL DEFAULT 1")
+        except Exception:
+            pass
 
 
 @contextmanager
@@ -104,13 +112,14 @@ def save_channel(
     p2_ts: float,
     p2_price: float,
     offset_y: float,
+    channel_type: str = 'normal',
 ) -> int:
     with _conn() as conn:
         cur = conn.execute(
             """INSERT INTO channels
-               (user_id, stock_code, p1_ts, p1_price, p2_ts, p2_price, offset_y, created_at)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (user_id, stock_code, p1_ts, p1_price, p2_ts, p2_price, offset_y, int(time.time())),
+               (user_id, stock_code, p1_ts, p1_price, p2_ts, p2_price, offset_y, channel_type, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (user_id, stock_code, p1_ts, p1_price, p2_ts, p2_price, offset_y, channel_type, int(time.time())),
         )
         return cur.lastrowid
 
@@ -143,6 +152,18 @@ def update_channel_coords(
                SET p1_ts=?, p1_price=?, p2_ts=?, p2_price=?, offset_y=?
                WHERE id=? AND user_id=?""",
             (p1_ts, p1_price, p2_ts, p2_price, offset_y, channel_id, user_id),
+        )
+        if cur.rowcount == 0:
+            return None
+        row = conn.execute("SELECT * FROM channels WHERE id=?", (channel_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def update_channel_alert(channel_id: int, user_id: str, enabled: bool) -> dict | None:
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE channels SET alert_enabled=? WHERE id=? AND user_id=?",
+            (1 if enabled else 0, channel_id, user_id),
         )
         if cur.rowcount == 0:
             return None

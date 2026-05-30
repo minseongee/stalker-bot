@@ -20,6 +20,7 @@ class ChannelSaveRequest(BaseModel):
     p2_ts: float    # 추세선 2번 점
     p2_price: float
     offset_y: float  # 하단 평행선 오프셋 (원)
+    channel_type: str = 'normal'  # 'normal' | 'fib'
 
 
 class ChannelResponse(BaseModel):
@@ -31,6 +32,8 @@ class ChannelResponse(BaseModel):
     p2_ts: float
     p2_price: float
     offset_y: float
+    channel_type: str = 'normal'
+    alert_enabled: bool = True
     created_at: int
 
 
@@ -41,6 +44,11 @@ class ChannelUpdateRequest(BaseModel):
     p2_ts: float
     p2_price: float
     offset_y: float
+
+
+class ChannelAlertToggleRequest(BaseModel):
+    token: str
+    enabled: bool
 
 
 class ChannelDeleteRequest(BaseModel):

@@ -78,8 +78,48 @@ async def _build_news_embed() -> discord.Embed | None:
     return embed
 
 
+# ── 차트 전송 헬퍼 ────────────────────────────────────────────────────────────
+# defer() 후 호출. 차트 embed + ChartResultView를 ephemeral followup으로 전송.
+
+async def _send_chart(interaction: discord.Interaction, code: str) -> None:
+    try:
+        result = await fetch_chart(code)
+    except Exception as e:
+        await interaction.followup.send(
+            f"⚠️ 차트 이미지를 가져오는 데 실패했습니다.\n```{type(e).__name__}: {e}```",
+            ephemeral=True,
+        )
+        return
+    if result is None:
+        await interaction.followup.send(
+            f"❌ `{code}` 종목을 찾을 수 없습니다.\n\n**지원 종목**\n{supported_codes()}",
+            ephemeral=True,
+        )
+        return
+    buf, info = result
+    sign  = "▲" if info["change"] >= 0 else "▼"
+    color = discord.Color.red() if info["change"] >= 0 else discord.Color.blue()
+    embed = discord.Embed(title=f"📊 {info['name']} ({info['code']})", color=color)
+    embed.add_field(
+        name="현재가",
+        value=f"**{info['close']:,}원** {sign} {info['change']:+,}원 ({info['change_pct']:+.2f}%)",
+        inline=False,
+    )
+    embed.add_field(name="시가",   value=f"{info['open']:,}원",   inline=True)
+    embed.add_field(name="고가",   value=f"{info['high']:,}원",   inline=True)
+    embed.add_field(name="저가",   value=f"{info['low']:,}원",    inline=True)
+    embed.add_field(name="거래량", value=f"{info['volume']:,}",   inline=True)
+    embed.set_image(url="attachment://chart.png")
+    embed.set_footer(text="⚠️ 목업 데이터 — 한국투자증권 API 연동 예정")
+    await interaction.followup.send(
+        embed=embed,
+        file=discord.File(buf, filename="chart.png"),
+        view=ChartResultView(code, str(interaction.user.id)),
+        ephemeral=True,
+    )
+
+
 # ── 주식 검색 Modal ───────────────────────────────────────────────────────────
-# 차트 이미지(파일 첨부)가 필요해서 edit_message 불가 → 별도 ephemeral로 유지
 
 class StockSearchModal(discord.ui.Modal, title="주식 차트 조회"):
     code = discord.ui.TextInput(
@@ -91,44 +131,7 @@ class StockSearchModal(discord.ui.Modal, title="주식 차트 조회"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
-        raw = self.code.value.strip()
-        try:
-            result = await fetch_chart(raw)
-        except Exception as e:
-            await interaction.followup.send(
-                f"⚠️ 차트 이미지를 가져오는 데 실패했습니다.\n```{type(e).__name__}: {e}```",
-                ephemeral=True,
-            )
-            return
-        if result is None:
-            await interaction.followup.send(
-                f"❌ `{raw}` 종목을 찾을 수 없습니다.\n\n**지원 종목**\n{supported_codes()}",
-                ephemeral=True,
-            )
-            return
-
-        buf, info = result
-        sign  = "▲" if info["change"] >= 0 else "▼"
-        color = discord.Color.red() if info["change"] >= 0 else discord.Color.blue()
-        embed = discord.Embed(title=f"📊 {info['name']} ({info['code']})", color=color)
-        embed.add_field(
-            name="현재가",
-            value=f"**{info['close']:,}원** {sign} {info['change']:+,}원 ({info['change_pct']:+.2f}%)",
-            inline=False,
-        )
-        embed.add_field(name="시가",   value=f"{info['open']:,}원",   inline=True)
-        embed.add_field(name="고가",   value=f"{info['high']:,}원",   inline=True)
-        embed.add_field(name="저가",   value=f"{info['low']:,}원",    inline=True)
-        embed.add_field(name="거래량", value=f"{info['volume']:,}",   inline=True)
-        embed.set_image(url="attachment://chart.png")
-        embed.set_footer(text="⚠️ 목업 데이터 — 한국투자증권 API 연동 예정")
-
-        await interaction.followup.send(
-            embed=embed,
-            file=discord.File(buf, filename="chart.png"),
-            view=ChartResultView(raw, str(interaction.user.id)),
-            ephemeral=True,
-        )
+        await _send_chart(interaction, self.code.value.strip())
 
 
 # ── 차트 결과 View ────────────────────────────────────────────────────────────
@@ -266,6 +269,29 @@ class WatchlistView(discord.ui.View):
     def __init__(self, user_id: str):
         super().__init__(timeout=None)
         self.user_id = user_id
+
+        codes = get_watchlist(user_id)
+        if codes:
+            options = [
+                discord.SelectOption(
+                    label=f"{DUMMY_STOCKS.get(c, {}).get('name', c)} ({c})",
+                    value=c,
+                    emoji="📊",
+                )
+                for c in codes
+            ]
+            select = discord.ui.Select(
+                placeholder="🔍 종목 차트 바로 조회…",
+                options=options,
+                row=1,
+            )
+            select.callback = self._on_search
+            self.add_item(select)
+
+    async def _on_search(self, interaction: discord.Interaction):
+        code = interaction.data["values"][0]
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        await _send_chart(interaction, code)
 
     @discord.ui.button(label="➕ 추가", style=discord.ButtonStyle.success)
     async def add(self, interaction: discord.Interaction, _button: discord.ui.Button):

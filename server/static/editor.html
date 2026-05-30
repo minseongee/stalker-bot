@@ -25,6 +25,8 @@
     button:hover:not(:disabled) { opacity: .82; }
     #btn-draw  { background: #2196F3; color: #fff; }
     #btn-draw.active { background: #f44336; }
+    #btn-fib   { background: #7b1fa2; color: #fff; }
+    #btn-fib.active { background: #f44336; }
     #btn-save  { background: #4caf50; color: #fff; }
     #btn-save:disabled, #btn-reset:disabled { background: #333; color: #666; cursor: not-allowed; }
     #btn-reset { background: #3a3f4b; color: #ccc; }
@@ -60,6 +62,19 @@
     .ch-info span { color: #888; font-size: 11px; margin-left: 6px; }
     .ch-del { background: transparent; border: 1px solid #c0392b; color: #c0392b; padding: 2px 8px; font-size: 11px; border-radius: 3px; cursor: pointer; }
     .ch-del:hover { background: #c0392b; color: #fff; }
+    .alert-toggle { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #666; flex-shrink: 0; }
+    .alert-toggle input { display: none; }
+    .toggle-track {
+      position: relative; width: 32px; height: 18px; border-radius: 9px;
+      background: #3a3f4b; cursor: pointer; transition: background .2s;
+    }
+    .toggle-track::after {
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 12px; height: 12px; border-radius: 50%;
+      background: #666; transition: transform .2s, background .2s;
+    }
+    .alert-toggle input:checked + .toggle-track { background: #1b5e20; }
+    .alert-toggle input:checked + .toggle-track::after { transform: translateX(14px); background: #4caf50; }
     #panel-empty { padding: 12px 14px; font-size: 12px; color: #555; }
   </style>
 </head>
@@ -68,6 +83,7 @@
 <div id="toolbar">
   <span id="stock-title">로딩 중…</span>
   <button id="btn-draw">채널 그리기</button>
+  <button id="btn-fib">피보 채널</button>
   <button id="btn-save" disabled>저장</button>
   <button id="btn-reset" disabled>초기화</button>
   <button id="help-btn" onclick="toggleHelp()">?</button>
@@ -87,8 +103,9 @@
   <div id="panel-body">
     <div id="help-box">
       <b>채널 그리기</b>: [채널 그리기] 클릭 → P1 클릭 → P2 클릭 → 마우스 이동으로 하단 채널 설정 → 클릭 확정 → [저장]<br>
-      <b>채널 수정</b>: 저장된 채널의 P1/P2 점(●)에 마우스를 올리면 노란 점 → 클릭하면 이동 모드 진입 → 원하는 위치 클릭 확정. ESC로 취소.<br>
-      <b>채널 폭 조정</b>: 저장된 채널의 <b>하단 점선</b>에 마우스를 올리면 노란 선으로 강조 → 클릭하면 폭 조정 모드 → 원하는 위치 클릭 확정.
+      <b>피보 채널</b>: [피보 채널] 클릭 → P1 클릭 → P2 클릭 → 마우스로 레벨 1 위치 설정 → 클릭 확정 → [저장]<br>
+      <b>채널 수정</b>: 저장된 채널의 P1/P2 점(●)에 마우스를 올리면 노란 점 → 드래그하여 원하는 위치에서 놓으면 확정. ESC로 취소.<br>
+      <b>채널 폭 조정</b>: 저장된 채널의 <b>하단 점선(레벨 1)</b>에 마우스를 올리면 노란 선으로 강조 → 드래그하여 원하는 위치에서 놓으면 확정.
     </div>
     <div id="channel-list"></div>
     <div id="panel-empty" style="display:none">저장된 채널이 없습니다.</div>
@@ -103,6 +120,7 @@ const CODE   = params.get('code')  ?? '';
 
 // ── DOM ──────────────────────────────────────────────────────────────────
 const btnDraw   = document.getElementById('btn-draw');
+const btnFib    = document.getElementById('btn-fib');
 const btnSave   = document.getElementById('btn-save');
 const btnReset  = document.getElementById('btn-reset');
 const statusEl  = document.getElementById('status');
@@ -129,11 +147,15 @@ let hoverInfo  = null; // {idx, point:'p1'|'p2', ch}
 let hoverLine  = null; // {idx, ch} — 하단선 호버
 let editTarget = null; // {idx, point:'p1'|'p2'|'offset'}
 let editPreview= null; // {time, price} 편집 중 이동 미리보기
+let isDragging = false; // 드래그 편집 진행 중
+let drawMode   = 'normal'; // 'normal' | 'fib'
 
 let savedChannels = [];
 let ohlcvData     = {}; // {"YYYY-MM-DD": {open,high,low,close}}
 
 const PALETTE      = ['#4fc3f7','#81c784','#ffb74d','#f06292','#ce93d8','#80cbc4'];
+const FIB_LEVELS   = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5];
+const FIB_COLORS   = ['#9e9e9e','#ef5350','#ff9800','#ffeb3b','#4caf50','#29b6f6','#3f51b5','#9c27b0'];
 const HIT_PX       = 12;  // 앵커 점 감지 반경
 const HIT_LINE_PX  = 7;   // 하단선 감지 반경
 
@@ -188,7 +210,7 @@ async function loadAll() {
     titleEl.textContent = `${CODE} 채널 에디터`;
     savedChannels = chRes.ok ? await chRes.json() : [];
     renderChannelList();
-    setStatus(`준비 완료. [채널 그리기]를 눌러 시작하세요. (수정 방법 → [?] 버튼)`);
+    setStatus(`준비 완료. [채널 그리기] 또는 [피보 채널]을 눌러 시작하세요. (수정 방법 → [?] 버튼)`);
   } catch (e) { setStatus(`❌ 로드 실패: ${e.message}`); }
 }
 loadAll();
@@ -216,9 +238,17 @@ function renderChannelList() {
     const off   = ch.offset_y >= 0 ? `+${ch.offset_y.toFixed(0)}` : ch.offset_y.toFixed(0);
     const item  = document.createElement('div');
     item.className = 'ch-item';
+    const fibBadge = ch.channel_type === 'fib'
+      ? ' <span style="color:#9c27b0;font-size:10px;font-weight:bold">피보</span>' : '';
+    const alertChecked = ch.alert_enabled ? 'checked' : '';
     item.innerHTML = `
       <div class="ch-dot" style="background:${color}"></div>
-      <div class="ch-info">채널 #${ch.id}<span>${date} | 오프셋 ${off}원</span></div>
+      <div class="ch-info">채널 #${ch.id}${fibBadge}<span>${date} | 오프셋 ${off}원</span></div>
+      <label class="alert-toggle" title="돌파 알림">
+        <input type="checkbox" ${alertChecked} onchange="toggleAlert(${ch.id}, this.checked)">
+        <span class="toggle-track"></span>
+        🔔
+      </label>
       <button class="ch-del" onclick="deleteChannel(${ch.id})">🗑 삭제</button>
     `;
     chList.appendChild(item);
@@ -240,6 +270,20 @@ async function deleteChannel(id) {
   } catch (e) { alert(`삭제 실패: ${e.message}`); }
 }
 
+async function toggleAlert(id, enabled) {
+  try {
+    const res = await fetch(`/channels/${id}/alert`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: TOKEN, enabled }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    const updated = await res.json();
+    const idx = savedChannels.findIndex(c => c.id === id);
+    if (idx !== -1) savedChannels[idx] = updated;
+    setStatus(`🔔 채널 #${id} 알림 ${enabled ? '켜짐' : '꺼짐'}`);
+  } catch (e) { alert(`알림 설정 실패: ${e.message}`); }
+}
+
 async function putChannel(ch) {
   const res = await fetch(`/channels/${ch.id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -256,10 +300,18 @@ async function putChannel(ch) {
 // ── 버튼 ─────────────────────────────────────────────────────────────────
 btnDraw.addEventListener('click', () => {
   if (state === 'idle' || state === 'done') {
-    resetDraw(false); state = 'p1';
+    resetDraw(false); drawMode = 'normal'; state = 'p1';
     btnDraw.textContent = '취소'; btnDraw.classList.add('active');
-    btnReset.disabled = false;
+    btnFib.disabled = true; btnReset.disabled = false;
     setStatus('① 추세선 시작점(P1)을 클릭하세요.');
+  } else { resetDraw(false); }
+});
+btnFib.addEventListener('click', () => {
+  if (state === 'idle' || state === 'done') {
+    resetDraw(false); drawMode = 'fib'; state = 'p1';
+    btnFib.textContent = '취소'; btnFib.classList.add('active');
+    btnDraw.disabled = true; btnReset.disabled = false;
+    setStatus('① 피보나치 채널 시작점(P1)을 클릭하세요.');
   } else { resetDraw(false); }
 });
 btnReset.addEventListener('click', () => resetDraw(false));
@@ -275,65 +327,8 @@ async function handleClick(param) {
   const price = cursorPos?.price ?? series.coordinateToPrice(param.point.y);
   if (price === null) return;
 
-  // ── 편집 확정 (P1 / P2) ─────────────────────────────────────────────
-  if (state === 'edit_point' && editTarget?.point !== 'offset') {
-    if (!time) return;
-    const ch = { ...savedChannels[editTarget.idx] };
-    if (editTarget.point === 'p1') { ch.p1_ts = toTs(time); ch.p1_price = price; }
-    else                           { ch.p2_ts = toTs(time); ch.p2_price = price; }
-    try {
-      const updated = await putChannel(ch);
-      savedChannels[editTarget.idx] = updated;
-      renderChannelList();
-      setStatus(`✅ 채널 #${ch.id} ${editTarget.point.toUpperCase()} 이동 완료`);
-    } catch (e) { setStatus(`❌ 수정 실패: ${e.message}`); }
-    editTarget = null; editPreview = null; state = 'idle';
-    btnDraw.disabled = false; drawCanvas(); return;
-  }
-
-  // ── 편집 확정 (offset) ───────────────────────────────────────────────
-  if (state === 'edit_point' && editTarget?.point === 'offset') {
-    const ch = { ...savedChannels[editTarget.idx] };
-    const x1 = chart.timeScale().timeToCoordinate(tsToStr(ch.p1_ts));
-    const y1 = series.priceToCoordinate(ch.p1_price);
-    const x2 = chart.timeScale().timeToCoordinate(tsToStr(ch.p2_ts));
-    const y2 = series.priceToCoordinate(ch.p2_price);
-    if (x1 !== null && y1 !== null && x2 !== null && y2 !== null) {
-      const upperPx    = getYOnLine(x1, y1, x2, y2, param.point.x);
-      const upperPrice = series.coordinateToPrice(upperPx);
-      if (upperPrice !== null) ch.offset_y = price - upperPrice;
-    }
-    try {
-      const updated = await putChannel(ch);
-      savedChannels[editTarget.idx] = updated;
-      renderChannelList();
-      setStatus(`✅ 채널 #${ch.id} 채널 폭 조정 완료`);
-    } catch (e) { setStatus(`❌ 수정 실패: ${e.message}`); }
-    editTarget = null; editPreview = null; state = 'idle';
-    btnDraw.disabled = false; drawCanvas(); return;
-  }
-
-  // ── 호버 앵커 클릭 → P1/P2 편집 시작 ──────────────────────────────
-  if ((state === 'idle' || state === 'done') && hoverInfo) {
-    editTarget = { idx: hoverInfo.idx, point: hoverInfo.point };
-    hoverInfo  = null; hoverLine = null; state = 'edit_point';
-    btnDraw.disabled = true; btnSave.disabled = true; btnReset.disabled = true;
-    const chId = savedChannels[editTarget.idx].id;
-    setStatus(`✏️ 채널 #${chId} ${editTarget.point.toUpperCase()} 이동 중 → 새 위치 클릭 | ESC 취소`);
-    drawCanvas(); return;
-  }
-
-  // ── 호버 하단선 클릭 → offset 편집 시작 ────────────────────────────
-  if ((state === 'idle' || state === 'done') && hoverLine && !hoverInfo) {
-    editTarget = { idx: hoverLine.idx, point: 'offset' };
-    hoverLine  = null; hoverInfo = null; state = 'edit_point';
-    btnDraw.disabled = true; btnSave.disabled = true; btnReset.disabled = true;
-    const chId = savedChannels[editTarget.idx].id;
-    setStatus(`↕️ 채널 #${chId} 채널 폭 조정 중 → 원하는 위치 클릭 | ESC 취소`);
-    drawCanvas(); return;
-  }
-
   // ── 일반 그리기 ─────────────────────────────────────────────────────
+  if (state === 'edit_point') return; // 드래그 편집 중 클릭 무시
   if (!time) return;
   if (state === 'p1') {
     p1 = { time, price }; state = 'p2';
@@ -342,7 +337,7 @@ async function handleClick(param) {
   } else if (state === 'p2') {
     if (time === p1.time) return;
     p2 = { time, price }; state = 'offset';
-    setStatus('③ 마우스로 하단 채널 폭 설정 → 클릭 확정');
+    setStatus(drawMode === 'fib' ? '③ 마우스로 레벨 1 위치 설정 → 클릭 확정' : '③ 마우스로 하단 채널 폭 설정 → 클릭 확정');
     drawCanvas();
   } else if (state === 'offset') {
     const x1 = chart.timeScale().timeToCoordinate(p1.time);
@@ -358,14 +353,18 @@ async function handleClick(param) {
     offsetY = lowerPrice - upperPrice;
     state   = 'done';
     btnDraw.textContent = '채널 그리기'; btnDraw.classList.remove('active');
+    btnFib.textContent = '피보 채널'; btnFib.classList.remove('active');
     btnSave.disabled = false; btnReset.disabled = false;
-    setStatus(`✅ 채널 완성 (오프셋 ${offsetY.toFixed(0)}원) — [저장] 클릭`);
+    setStatus(drawMode === 'fib'
+      ? `✅ 피보 채널 완성 (레벨 1 오프셋 ${offsetY.toFixed(0)}원) — [저장] 클릭`
+      : `✅ 채널 완성 (오프셋 ${offsetY.toFixed(0)}원) — [저장] 클릭`);
     drawCanvas();
   }
 }
 
 chart.subscribeCrosshairMove(param => {
   if (!param.point) {
+    if (isDragging) return; // 드래그 중엔 크로스헤어 이탈로 상태 리셋 방지
     lastPxPos = null;
     cursorPos = null; hoverInfo = null;
     editPreview = null; drawCanvas(); return;
@@ -383,7 +382,7 @@ chart.subscribeCrosshairMove(param => {
 
   // 호버 감지
   if (state === 'idle' || state === 'done') {
-    hoverInfo = null;
+    hoverInfo = null; hoverLine = null;
     for (let i = 0; i < savedChannels.length; i++) {
       const ch = savedChannels[i];
       const x1 = chart.timeScale().timeToCoordinate(tsToStr(ch.p1_ts));
@@ -407,10 +406,95 @@ chart.subscribeCrosshairMove(param => {
         }
       }
     }
-    if (hoverInfo) setStatus(`✏️ ${hoverInfo.point.toUpperCase()} 앵커 클릭 → 이동 모드`);
-    else if (hoverLine) setStatus(`↕️ 하단선 클릭 → 채널 폭 조정 모드`);
+    if (hoverInfo) setStatus(`✏️ ${hoverInfo.point.toUpperCase()} 앵커 — 드래그하여 이동`);
+    else if (hoverLine) setStatus(`↕️ 하단선 — 드래그하여 채널 폭 조정`);
   }
   drawCanvas();
+});
+
+// ── 드래그 편집 ───────────────────────────────────────────────────────────
+// capture 단계에서 mousedown을 가로채 차트 패닝 차단 후 드래그 모드 진입
+wrapper.addEventListener('mousedown', e => {
+  if (state !== 'idle' && state !== 'done') return;
+  if (!hoverInfo && !hoverLine) return;
+  e.stopPropagation(); e.preventDefault();
+  isDragging = true;
+  if (hoverInfo) {
+    editTarget = { idx: hoverInfo.idx, point: hoverInfo.point };
+    setStatus(`✏️ 채널 #${savedChannels[editTarget.idx].id} ${editTarget.point.toUpperCase()} 드래그 중 | 놓으면 확정 · ESC 취소`);
+  } else {
+    editTarget = { idx: hoverLine.idx, point: 'offset' };
+    setStatus(`↕️ 채널 #${savedChannels[editTarget.idx].id} 채널 폭 드래그 중 | 놓으면 확정 · ESC 취소`);
+  }
+  hoverInfo = null; hoverLine = null;
+  state = 'edit_point';
+  btnDraw.disabled = true; btnSave.disabled = true; btnReset.disabled = true;
+  drawCanvas();
+}, true);
+
+// 드래그 중 좌표를 직접 갱신 (크로스헤어가 이탈할 경우를 대비한 보조)
+wrapper.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const rect = wrapper.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  lastPxPos = { x, y };
+  const time  = chart.timeScale().coordinateToTime(x);
+  const price = series.coordinateToPrice(y);
+  if (time && price !== null) {
+    cursorPos   = { time, price };
+    editPreview = { time, price };
+  }
+  drawCanvas();
+});
+
+// mouseup에서 드래그 확정 (window: 차트 밖에서 놓아도 처리)
+window.addEventListener('mouseup', async () => {
+  if (!isDragging) return;
+  isDragging = false;
+  if (state !== 'edit_point' || !editTarget) return;
+
+  if (editTarget.point !== 'offset') {
+    // ── P1 / P2 이동 확정 ─────────────────────────────────────────
+    if (!editPreview?.time) {
+      editTarget = null; editPreview = null; state = 'idle';
+      btnDraw.disabled = false; drawCanvas(); return;
+    }
+    const ch = { ...savedChannels[editTarget.idx] };
+    if (editTarget.point === 'p1') { ch.p1_ts = toTs(editPreview.time); ch.p1_price = editPreview.price; }
+    else                           { ch.p2_ts = toTs(editPreview.time); ch.p2_price = editPreview.price; }
+    try {
+      const updated = await putChannel(ch);
+      savedChannels[editTarget.idx] = updated;
+      renderChannelList();
+      setStatus(`✅ 채널 #${ch.id} ${editTarget.point.toUpperCase()} 이동 완료`);
+    } catch (err) { setStatus(`❌ 수정 실패: ${err.message}`); }
+  } else {
+    // ── offset(하단선) 확정 ────────────────────────────────────────
+    if (!lastPxPos) {
+      editTarget = null; editPreview = null; state = 'idle';
+      btnDraw.disabled = false; drawCanvas(); return;
+    }
+    const ch = { ...savedChannels[editTarget.idx] };
+    const x1 = chart.timeScale().timeToCoordinate(tsToStr(ch.p1_ts));
+    const y1 = series.priceToCoordinate(ch.p1_price);
+    const x2 = chart.timeScale().timeToCoordinate(tsToStr(ch.p2_ts));
+    const y2 = series.priceToCoordinate(ch.p2_price);
+    if (x1 !== null && y1 !== null && x2 !== null && y2 !== null) {
+      const upperPrice = series.coordinateToPrice(getYOnLine(x1, y1, x2, y2, lastPxPos.x));
+      const lowerPrice = series.coordinateToPrice(lastPxPos.y);
+      if (upperPrice !== null && lowerPrice !== null) ch.offset_y = lowerPrice - upperPrice;
+    }
+    try {
+      const updated = await putChannel(ch);
+      savedChannels[editTarget.idx] = updated;
+      renderChannelList();
+      setStatus(`✅ 채널 #${ch.id} 채널 폭 조정 완료`);
+    } catch (err) { setStatus(`❌ 수정 실패: ${err.message}`); }
+  }
+
+  editTarget = null; editPreview = null; state = 'idle';
+  btnDraw.disabled = false; drawCanvas();
 });
 
 // ── 렌더링 ───────────────────────────────────────────────────────────────
@@ -420,7 +504,9 @@ function drawCanvas() {
   // 저장된 채널
   savedChannels.forEach((ch, i) => {
     const isEdit = editTarget?.idx === i;
-    drawSavedChannel(ch, PALETTE[i % PALETTE.length], isEdit ? 0.2 : 0.55);
+    const alpha = isEdit ? 0.2 : 0.55;
+    if (ch.channel_type === 'fib') drawSavedFibChannel(ch, alpha);
+    else drawSavedChannel(ch, PALETTE[i % PALETTE.length], alpha);
   });
 
   // 편집 미리보기 — P1/P2 이동
@@ -441,10 +527,19 @@ function drawCanvas() {
       const [lx,ly,rx,ry] = editTarget.point==='p1' ? [ex,ey,ax,ay] : [ax,ay,ex,ey];
       const offA = priceDiffToPx(ch.offset_y, aPrice);
       const offE = priceDiffToPx(ch.offset_y, preview.price);
-      extendLine(lx, ly, rx, ry, color, false, 0.9);
-      if (offA!==null && offE!==null) {
-        const [ofl, ofr] = editTarget.point==='p1' ? [offE,offA] : [offA,offE];
-        extendLine(lx, ly+ofl, rx, ry+ofr, color, true, 0.9);
+      if (ch.channel_type === 'fib') {
+        if (offA !== null && offE !== null) {
+          FIB_LEVELS.forEach((level, li) => {
+            const [ofl, ofr] = editTarget.point==='p1' ? [offE*level,offA*level] : [offA*level,offE*level];
+            extendLine(lx, ly+ofl, rx, ry+ofr, FIB_COLORS[li], false, 0.9);
+          });
+        }
+      } else {
+        extendLine(lx, ly, rx, ry, color, false, 0.9);
+        if (offA!==null && offE!==null) {
+          const [ofl, ofr] = editTarget.point==='p1' ? [offE,offA] : [offA,offE];
+          extendLine(lx, ly+ofl, rx, ry+ofr, color, true, 0.9);
+        }
       }
       drawDot(ex, ey, '#ffeb3b', 7);
     }
@@ -459,9 +554,15 @@ function drawCanvas() {
     const x2 = chart.timeScale().timeToCoordinate(tsToStr(ch.p2_ts));
     const y2 = series.priceToCoordinate(ch.p2_price);
     if (x1 !== null && y1 !== null && x2 !== null && y2 !== null) {
-      extendLine(x1, y1, x2, y2, color, false, 0.9); // 상단선 고정
       const dy = lastPxPos.y - getYOnLine(x1, y1, x2, y2, lastPxPos.x);
-      extendLine(x1, y1+dy, x2, y2+dy, color, true, 0.9); // 하단선 미리보기
+      if (ch.channel_type === 'fib') {
+        FIB_LEVELS.forEach((level, li) => {
+          extendLine(x1, y1+dy*level, x2, y2+dy*level, FIB_COLORS[li], false, 0.9);
+        });
+      } else {
+        extendLine(x1, y1, x2, y2, color, false, 0.9);
+        extendLine(x1, y1+dy, x2, y2+dy, color, true, 0.9);
+      }
     }
   }
 
@@ -475,7 +576,7 @@ function drawCanvas() {
     if (hx !== null && hy !== null) {
       drawDot(hx, hy, '#ffeb3b', 9);
       // 풍선 라벨
-      const label = `클릭: ${hoverInfo.point.toUpperCase()} 이동`;
+      const label = `드래그: ${hoverInfo.point.toUpperCase()} 이동`;
       ctx.save();
       ctx.font = 'bold 11px sans-serif';
       const tw = ctx.measureText(label).width;
@@ -503,7 +604,7 @@ function drawCanvas() {
         // 풍선 라벨 (마우스 위치에)
         if (lastPxPos) {
           ctx.save();
-          const label = '클릭: 채널 폭 조정';
+          const label = '드래그: 채널 폭 조정';
           ctx.font = 'bold 11px sans-serif';
           const tw = ctx.measureText(label).width;
           ctx.fillStyle = 'rgba(20,25,32,0.88)';
@@ -557,12 +658,25 @@ function drawCanvas() {
   extendLine(x1, y1, x2, y2, '#4fc3f7', false, 0.9);
 
   if (state === 'offset' && lastPxPos) {
-    // 마우스 실제 x 위치에서의 상단선 y를 구해 offset 계산 → 선이 마우스를 정확히 통과
     const dy = lastPxPos.y - getYOnLine(x1, y1, x2, y2, lastPxPos.x);
-    extendLine(x1, y1+dy, x2, y2+dy, '#4fc3f7', true, 0.9);
+    if (drawMode === 'fib') {
+      FIB_LEVELS.forEach((level, li) => {
+        extendLine(x1, y1+dy*level, x2, y2+dy*level, FIB_COLORS[li], false, 0.9);
+      });
+    } else {
+      extendLine(x1, y1+dy, x2, y2+dy, '#4fc3f7', true, 0.9);
+    }
   } else if (state === 'done') {
     const offPx = priceDiffToPx(offsetY, p1.price);
-    if (offPx !== null) extendLine(x1, y1+offPx, x2, y2+offPx, '#4fc3f7', true, 0.9);
+    if (offPx !== null) {
+      if (drawMode === 'fib') {
+        FIB_LEVELS.forEach((level, li) => {
+          extendLine(x1, y1+offPx*level, x2, y2+offPx*level, FIB_COLORS[li], false, 0.9);
+        });
+      } else {
+        extendLine(x1, y1+offPx, x2, y2+offPx, '#4fc3f7', true, 0.9);
+      }
+    }
   }
 }
 
@@ -578,6 +692,32 @@ function drawSavedChannel(ch, color, alpha) {
   drawDot(x1,y1, color, 4); drawDot(x2,y2, color, 4);
 }
 
+function drawSavedFibChannel(ch, alpha) {
+  const x1 = chart.timeScale().timeToCoordinate(tsToStr(ch.p1_ts));
+  const y1 = series.priceToCoordinate(ch.p1_price);
+  const x2 = chart.timeScale().timeToCoordinate(tsToStr(ch.p2_ts));
+  const y2 = series.priceToCoordinate(ch.p2_price);
+  if (x1===null||y1===null||x2===null||y2===null) return;
+  const offPx = priceDiffToPx(ch.offset_y, ch.p1_price);
+  if (offPx === null) return;
+  const slope = x2 !== x1 ? (y2 - y1) / (x2 - x1) : 0;
+  const labelX = canvas.width - 52; // 가격 축 왼쪽 여백
+  FIB_LEVELS.forEach((level, li) => {
+    extendLine(x1, y1 + offPx*level, x2, y2 + offPx*level, FIB_COLORS[li], false, alpha);
+    // 레벨 라벨
+    const labelY = y1 + slope * (labelX - x1) + offPx * level;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = FIB_COLORS[li];
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(String(level), labelX - 3, labelY - 3);
+    ctx.restore();
+  });
+  drawDot(x1, y1, FIB_COLORS[0], 4);
+  drawDot(x2, y2, FIB_COLORS[0], 4);
+}
+
 // ── 저장 ─────────────────────────────────────────────────────────────────
 async function saveChannel() {
   if (!p1||!p2) return;
@@ -589,6 +729,7 @@ async function saveChannel() {
         token: TOKEN, stock_code: CODE,
         p1_ts: toTs(p1.time), p1_price: p1.price,
         p2_ts: toTs(p2.time), p2_price: p2.price, offset_y: offsetY,
+        channel_type: drawMode,
       }),
     });
     if (!res.ok) throw new Error((await res.json()).detail ?? `HTTP ${res.status}`);
@@ -601,11 +742,13 @@ async function saveChannel() {
 
 // ── 초기화 ───────────────────────────────────────────────────────────────
 function resetDraw(keepStatus = false) {
+  isDragging = false; drawMode = 'normal';
   state = 'idle'; p1=p2=null; offsetY=0;
   cursorPos=null; lastPxPos=null; hoverInfo=null; hoverLine=null; editTarget=null; editPreview=null;
-  btnDraw.textContent='채널 그리기'; btnDraw.classList.remove('active');
-  btnDraw.disabled=false; btnSave.disabled=true; btnReset.disabled=true;
-  if (!keepStatus) setStatus('준비. [채널 그리기]를 눌러 시작 | 저장된 채널 앵커 위에 마우스 → 수정 가능');
+  btnDraw.textContent='채널 그리기'; btnDraw.classList.remove('active'); btnDraw.disabled=false;
+  btnFib.textContent='피보 채널';   btnFib.classList.remove('active');  btnFib.disabled=false;
+  btnSave.disabled=true; btnReset.disabled=true;
+  if (!keepStatus) setStatus('준비. [채널 그리기] 또는 [피보 채널]을 눌러 시작');
   drawCanvas();
 }
 

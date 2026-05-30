@@ -16,10 +16,12 @@ from .database import (
     get_channels,
     init_db,
     save_channel,
+    update_channel_alert,
     update_channel_coords,
     validate_token,
 )
 from .models import (
+    ChannelAlertToggleRequest,
     ChannelDeleteRequest,
     ChannelResponse,
     ChannelSaveRequest,
@@ -103,6 +105,7 @@ def save_channel_endpoint(req: ChannelSaveRequest):
         p2_ts=req.p2_ts,
         p2_price=req.p2_price,
         offset_y=req.offset_y,
+        channel_type=req.channel_type,
     )
     rows = get_channels(user_id)
     row = next(r for r in rows if r["id"] == channel_id)
@@ -127,6 +130,18 @@ def update_channel_endpoint(channel_id: int, req: ChannelUpdateRequest):
         req.p2_ts, req.p2_price,
         req.offset_y,
     )
+    if row is None:
+        raise HTTPException(status_code=404, detail="채널을 찾을 수 없습니다.")
+    return ChannelResponse(**row)
+
+
+@app.patch("/channels/{channel_id}/alert", response_model=ChannelResponse)
+def toggle_alert(channel_id: int, req: ChannelAlertToggleRequest):
+    """웹 에디터가 호출 — 채널 알림 on/off 토글."""
+    user_id = validate_token(req.token)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="토큰이 유효하지 않거나 만료됐습니다.")
+    row = update_channel_alert(channel_id, user_id, req.enabled)
     if row is None:
         raise HTTPException(status_code=404, detail="채널을 찾을 수 없습니다.")
     return ChannelResponse(**row)
