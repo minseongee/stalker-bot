@@ -39,7 +39,13 @@ async def _run_once() -> None:
         if upsert_news_item(item):
             inserted.append(item)
 
-    print(f"[Pipeline] 수집 {len(new_items)}건 / 신규 {len(inserted)}건")
+    from datetime import datetime, timezone, timedelta
+    kst = datetime.now(timezone(timedelta(hours=9))).strftime("%H:%M:%S")
+    per_source = {}
+    for item in new_items:
+        per_source[item["source"]] = per_source.get(item["source"], 0) + 1
+    source_str = " | ".join(f"{s} {n}건" for s, n in per_source.items())
+    print(f"[{kst}] [뉴스수집] 총 {len(new_items)}건 (신규 {len(inserted)}건) — {source_str}")
 
     # 2) 클러스터링 (최근 6시간 기사 전체 대상으로 재계산)
     since = int(time.time()) - 3600 * 6

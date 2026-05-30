@@ -15,7 +15,7 @@ DART_ENDPOINT = "https://opendart.fss.or.kr/api/list.json"
 POLL_INTERVAL: int = int(os.getenv("NEWS_POLL_INTERVAL", "60"))  # 초
 
 # ── 클러스터링 ─────────────────────────────────────────────────────────────────
-CLUSTER_SIMILARITY_THRESHOLD: float = 0.25   # 자카드 유사도 임계값
+CLUSTER_SIMILARITY_THRESHOLD: float = 0.35   # 자카드 유사도 임계값
 CLUSTER_WINDOW_SECONDS: int = 3600 * 6       # 같은 클러스터로 묶을 최대 시간 간격
 
 # ── 핫뉴스 판별 ───────────────────────────────────────────────────────────────
