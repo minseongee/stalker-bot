@@ -1,20 +1,13 @@
-import datetime
+import asyncio
 import os
 import traceback
 
 import aiohttp
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord import app_commands
 
-KST = datetime.timezone(datetime.timedelta(hours=9))
-_NEWS_TIMES = [
-    datetime.time(hour=8,  tzinfo=KST),  # 08:00 KST 모닝 브리핑
-    datetime.time(hour=12, tzinfo=KST),  # 12:00 KST 오전장 마감
-    datetime.time(hour=16, tzinfo=KST),  # 16:00 KST 장 마감
-    datetime.time(hour=21, tzinfo=KST),  # 21:00 KST 미국장 오픈
-]
-from utils.summarizer import summarize_news, get_cached_news, get_cache_time_kst
+from utils.summarizer import get_cache_time_kst, _build_hot_news_embeds
 from utils.chart import fetch_chart, supported_codes
 from server.database import (
     get_watchlist, add_to_watchlist, remove_from_watchlist,
@@ -24,8 +17,7 @@ from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
 
 SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
 
-_news_embed: discord.Embed | None = None
-_news_loading: bool = False
+_last_broadcast_cluster_ids: set[str] = set()  # 중복 브로드캐스트 방지
 
 
 # ── 임베드 빌더 ──────────────────────────────────────────────────────────────
@@ -68,16 +60,30 @@ def _build_watchlist_embed(user_id: str) -> discord.Embed:
     return embed
 
 
-async def _build_news_embed() -> discord.Embed | None:
-    summary = await summarize_news()
-    if not summary:
-        return None
+def _build_hot_embed(news: dict) -> discord.Embed:
+    direction = news.get("direction", "neutral")
+    color = (discord.Color.red()   if direction == "positive" else
+             discord.Color.blue()  if direction == "negative" else
+             discord.Color.greyple())
+    title_emoji = "📈" if direction == "positive" else ("📉" if direction == "negative" else "📌")
+
     embed = discord.Embed(
-        title="📰 오늘의 시장 브리핑",
-        description=summary,
-        color=discord.Color.green(),
+        title=f"{title_emoji} {news['headline']}",
+        description=news["summary"],
+        color=color,
     )
-    embed.set_footer(text=f"마지막 업데이트: {get_cache_time_kst()}")
+    tags = news.get("tags", [])
+    if tags:
+        embed.add_field(name="관련 종목/섹터", value=" ".join(f"`{t}`" for t in tags), inline=False)
+
+    sources = news.get("sources", [])
+    if sources:
+        source_lines = "\n".join(
+            f"[{s['source']}]({s['url']})" for s in sources[:5]
+        )
+        embed.add_field(name="출처", value=source_lines, inline=False)
+
+    embed.set_footer(text=f"마지막 업데이트: {get_cache_time_kst() or '-'}")
     return embed
 
 
@@ -368,59 +374,37 @@ class General(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
-        global _news_embed
-        cached = get_cached_news()
-        if cached:
-            embed = discord.Embed(
-                title="📰 오늘의 시장 브리핑",
-                description=cached,
-                color=discord.Color.green(),
-            )
-            embed.set_footer(text=f"마지막 업데이트: {get_cache_time_kst()}")
-            _news_embed = embed
-            print("[뉴스] 캐시에서 _news_embed 사전 로드 완료")
-        self.refresh_news.start()
+        from news.pipeline import register_hot_callback
+        register_hot_callback(self._on_hot_news)
+        print("[뉴스] hot news 콜백 등록 완료")
 
     def cog_unload(self):
-        self.refresh_news.cancel()
+        pass
 
-    @tasks.loop(time=_NEWS_TIMES)
-    async def refresh_news(self):
-        global _news_embed, _news_loading
-        _news_loading = True
-        try:
-            embed = await _build_news_embed()
-            if embed:
-                _news_embed = embed
-                print("[뉴스] _news_embed 설정 완료")
-                await self._broadcast_news(embed)
-            else:
-                print("[뉴스] embed 생성 실패 — summary가 비어있음")
-        except Exception:
-            print("[뉴스] refresh_news 오류:")
-            traceback.print_exc()
-        finally:
-            _news_loading = False
+    def _on_hot_news(self, refined_list: list[dict]) -> None:
+        """pipeline.py에서 새 핫뉴스 정제 완료 시 호출 (동기 콜백)."""
+        asyncio.create_task(self._broadcast_hot_news(refined_list))
 
-    async def _broadcast_news(self, embed: discord.Embed) -> None:
-        for row in get_all_news_channels():
-            ch = self.bot.get_channel(int(row["channel_id"]))
-            if ch is None:
+    async def _broadcast_hot_news(self, refined_list: list[dict]) -> None:
+        global _last_broadcast_cluster_ids
+        channels = get_all_news_channels()
+        if not channels:
+            return
+        for news in refined_list:
+            cid = news.get("cluster_id", "")
+            if cid in _last_broadcast_cluster_ids:
                 continue
-            try:
-                await ch.send(embed=embed)
-                print(f"[뉴스] 채널 {row['channel_id']} 전송 완료")
-            except Exception as e:
-                print(f"[뉴스] 채널 {row['channel_id']} 전송 실패: {e}")
-
-    @refresh_news.error
-    async def on_refresh_error(self, error: Exception):
-        print(f"[뉴스] refresh_news 태스크 오류: {error}")
-        traceback.print_exception(type(error), error, error.__traceback__)
-
-    @refresh_news.before_loop
-    async def before_refresh(self):
-        await self.bot.wait_until_ready()
+            _last_broadcast_cluster_ids.add(cid)
+            embed = _build_hot_embed(news)
+            for row in channels:
+                ch = self.bot.get_channel(int(row["channel_id"]))
+                if ch is None:
+                    continue
+                try:
+                    await ch.send(embed=embed)
+                    print(f"[뉴스] 채널 {row['channel_id']} 핫뉴스 전송: {news['headline']}")
+                except Exception as e:
+                    print(f"[뉴스] 채널 {row['channel_id']} 전송 실패: {e}")
 
     @app_commands.command(name="뉴스", description="이 채널을 뉴스 자동 공유 채널로 지정합니다. (관리자 전용)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -434,12 +418,14 @@ class General(commands.Cog):
             "매시간 뉴스가 갱신되면 이 채널에 자동으로 공유됩니다.",
             ephemeral=True,
         )
-        # 지정 즉시 현재 뉴스 전송
-        if _news_embed:
-            try:
-                await interaction.channel.send(embed=_news_embed)
-            except Exception as e:
-                print(f"[뉴스] 즉시 전송 실패: {e}")
+        # 지정 즉시 최근 핫뉴스 전송
+        hot_list = _build_hot_news_embeds()
+        if hot_list:
+            for news in hot_list[:5]:
+                try:
+                    await interaction.channel.send(embed=_build_hot_embed(news))
+                except Exception as e:
+                    print(f"[뉴스] 즉시 전송 실패: {e}")
 
     @set_news_ch.error
     async def set_news_ch_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):

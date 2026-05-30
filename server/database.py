@@ -45,6 +45,35 @@ CREATE TABLE IF NOT EXISTS news_channels (
     channel_id TEXT    NOT NULL,
     set_at     INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS news_items (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    guid         TEXT    UNIQUE NOT NULL,
+    title        TEXT    NOT NULL,
+    url          TEXT    NOT NULL,
+    source       TEXT    NOT NULL,
+    published_at INTEGER NOT NULL,
+    fetched_at   INTEGER NOT NULL,
+    cluster_id   TEXT,
+    hot_score    REAL    NOT NULL DEFAULT 0,
+    is_hot       INTEGER NOT NULL DEFAULT 0,
+    summary      TEXT,
+    headline     TEXT,
+    direction    TEXT,
+    stock_tags   TEXT,
+    sources_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS news_clusters (
+    cluster_id   TEXT    PRIMARY KEY,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    item_count   INTEGER NOT NULL DEFAULT 1,
+    source_count INTEGER NOT NULL DEFAULT 1,
+    hot_score    REAL    NOT NULL DEFAULT 0,
+    is_hot       INTEGER NOT NULL DEFAULT 0,
+    refined_at   INTEGER
+);
 """
 
 
@@ -263,3 +292,118 @@ def record_alert(channel_id: int, side: str) -> None:
             "INSERT OR REPLACE INTO alerts (channel_id, side, fired_at) VALUES (?,?,?)",
             (channel_id, side, int(time.time())),
         )
+
+
+# ── news_items ────────────────────────────────────────────────────────────────
+
+def upsert_news_item(item: dict) -> bool:
+    """새 기사 저장. 이미 존재하면 False, 새로 삽입하면 True."""
+    try:
+        with _conn() as conn:
+            conn.execute(
+                """INSERT INTO news_items
+                   (guid, title, url, source, published_at, fetched_at)
+                   VALUES (:guid, :title, :url, :source, :published_at, :fetched_at)""",
+                item,
+            )
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+
+def update_news_cluster(guid: str, cluster_id: str, hot_score: float, is_hot: bool) -> None:
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE news_items SET cluster_id=?, hot_score=?, is_hot=? WHERE guid=?",
+            (cluster_id, hot_score, 1 if is_hot else 0, guid),
+        )
+
+
+def update_news_refined(guid: str, summary: str, headline: str, direction: str,
+                        stock_tags: str, sources_json: str) -> None:
+    with _conn() as conn:
+        conn.execute(
+            """UPDATE news_items
+               SET summary=?, headline=?, direction=?, stock_tags=?, sources_json=?
+               WHERE guid=?""",
+            (summary, headline, direction, stock_tags, sources_json, guid),
+        )
+
+
+def get_recent_news_items(limit: int = 200, since: int | None = None) -> list[dict]:
+    with _conn() as conn:
+        if since is not None:
+            rows = conn.execute(
+                "SELECT * FROM news_items WHERE fetched_at >= ? ORDER BY fetched_at DESC LIMIT ?",
+                (since, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM news_items ORDER BY fetched_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_hot_news(limit: int = 20) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM news_items
+               WHERE is_hot = 1 AND summary IS NOT NULL
+               ORDER BY fetched_at DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_latest_hot_news_time() -> int | None:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT fetched_at FROM news_items WHERE is_hot=1 ORDER BY fetched_at DESC LIMIT 1"
+        ).fetchone()
+        return row["fetched_at"] if row else None
+
+
+# ── news_clusters ─────────────────────────────────────────────────────────────
+
+def upsert_cluster(cluster_id: str, item_count: int, source_count: int,
+                   hot_score: float, is_hot: bool) -> None:
+    now = int(time.time())
+    with _conn() as conn:
+        conn.execute(
+            """INSERT INTO news_clusters
+               (cluster_id, created_at, updated_at, item_count, source_count, hot_score, is_hot)
+               VALUES (?,?,?,?,?,?,?)
+               ON CONFLICT(cluster_id) DO UPDATE SET
+                 updated_at=excluded.updated_at,
+                 item_count=excluded.item_count,
+                 source_count=excluded.source_count,
+                 hot_score=excluded.hot_score,
+                 is_hot=excluded.is_hot""",
+            (cluster_id, now, now, item_count, source_count, hot_score, 1 if is_hot else 0),
+        )
+
+
+def mark_cluster_refined(cluster_id: str) -> None:
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE news_clusters SET refined_at=? WHERE cluster_id=?",
+            (int(time.time()), cluster_id),
+        )
+
+
+def get_unrefined_hot_clusters() -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM news_clusters WHERE is_hot=1 AND refined_at IS NULL ORDER BY hot_score DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_cluster_items(cluster_id: str) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM news_items WHERE cluster_id=? ORDER BY published_at",
+            (cluster_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]

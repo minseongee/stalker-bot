@@ -1,11 +1,13 @@
+import asyncio
+import json
 import os
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .ohlcv import gen_ohlcv
@@ -14,6 +16,7 @@ from .database import (
     create_token,
     delete_channel,
     get_channels,
+    get_hot_news,
     init_db,
     save_channel,
     update_channel_alert,
@@ -32,6 +35,21 @@ from .models import (
 
 BASE_URL = os.getenv("EDITOR_BASE_URL", "http://localhost:8000")
 TOKEN_TTL = 600  # 10분
+
+# SSE 구독자: {queue} 셋
+_sse_subscribers: set[asyncio.Queue] = set()
+
+
+def push_hot_news(refined_list: list[dict]) -> None:
+    """pipeline.py의 hot callback — 정제된 핫뉴스를 모든 SSE 구독자에게 전송."""
+    payload = json.dumps(refined_list, ensure_ascii=False)
+    dead = set()
+    for q in _sse_subscribers:
+        try:
+            q.put_nowait(payload)
+        except asyncio.QueueFull:
+            dead.add(q)
+    _sse_subscribers.difference_update(dead)
 
 
 @asynccontextmanager
@@ -156,3 +174,64 @@ def delete_channel_endpoint(req: ChannelDeleteRequest):
     if not delete_channel(req.channel_id, user_id):
         raise HTTPException(status_code=404, detail="채널을 찾을 수 없습니다.")
     return {"ok": True}
+
+
+# ── 뉴스 API ──────────────────────────────────────────────────────────────────
+
+@app.get("/news/hot")
+def hot_news(limit: int = Query(default=20, le=100)):
+    """최근 정제된 핫뉴스 목록 조회."""
+    rows = get_hot_news(limit=limit)
+    result = []
+    for r in rows:
+        sources = json.loads(r["sources_json"]) if r.get("sources_json") else []
+        tags    = json.loads(r["stock_tags"])    if r.get("stock_tags")    else []
+        result.append({
+            "headline":  r["headline"],
+            "summary":   r["summary"],
+            "direction": r["direction"],
+            "tags":      tags,
+            "sources":   sources,
+            "fetched_at": r["fetched_at"],
+        })
+    return result
+
+
+@app.get("/news/stream")
+async def news_stream(tags: str = Query(default="")):
+    """
+    SSE 스트림 — 핫뉴스 발생 시 실시간 전달.
+    tags: 쉼표 구분 종목/섹터 필터 (비어있으면 전체 전달)
+    """
+    filter_tags = {t.strip() for t in tags.split(",") if t.strip()} if tags else set()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=50)
+    _sse_subscribers.add(queue)
+
+    async def event_generator():
+        try:
+            yield "retry: 3000\n\n"
+            while True:
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    items: list[dict] = json.loads(payload)
+                    if filter_tags:
+                        items = [
+                            it for it in items
+                            if filter_tags & set(it.get("stock_tags", []))
+                        ]
+                    if items:
+                        data = json.dumps(items, ensure_ascii=False)
+                        yield f"data: {data}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            _sse_subscribers.discard(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

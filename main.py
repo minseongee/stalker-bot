@@ -26,6 +26,14 @@ async def main():
                 print(f"[Cog] {filename} 로드 완료")
         from cogs.general import StockView
         bot.add_view(StockView())
+
+        from news.pipeline import run_loop
+        from server.app import push_hot_news
+        from news.pipeline import register_hot_callback
+        register_hot_callback(push_hot_news)  # SSE 구독자에게도 전달
+        asyncio.create_task(run_loop())
+        print("[Pipeline] 뉴스 수집 태스크 시작")
+
         await bot.start(os.getenv("DISCORD_TOKEN"))
 
 
