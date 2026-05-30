@@ -1,3 +1,4 @@
+import datetime
 import os
 import traceback
 
@@ -5,6 +6,14 @@ import aiohttp
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
+
+KST = datetime.timezone(datetime.timedelta(hours=9))
+_NEWS_TIMES = [
+    datetime.time(hour=8,  tzinfo=KST),  # 08:00 KST 모닝 브리핑
+    datetime.time(hour=12, tzinfo=KST),  # 12:00 KST 오전장 마감
+    datetime.time(hour=16, tzinfo=KST),  # 16:00 KST 장 마감
+    datetime.time(hour=21, tzinfo=KST),  # 21:00 KST 미국장 오픈
+]
 from utils.summarizer import summarize_news, get_cached_news, get_cache_time_kst
 from utils.chart import fetch_chart, supported_codes
 from server.database import (
@@ -375,7 +384,7 @@ class General(commands.Cog):
     def cog_unload(self):
         self.refresh_news.cancel()
 
-    @tasks.loop(hours=4)
+    @tasks.loop(time=_NEWS_TIMES)
     async def refresh_news(self):
         global _news_embed, _news_loading
         _news_loading = True
