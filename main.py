@@ -17,8 +17,9 @@ async def on_ready():
     guild_id = os.getenv("GUILD_ID")
     if guild_id:
         guild = discord.Object(id=int(guild_id))
-        bot.tree.clear_commands(guild=guild)
+        bot.tree.copy_global_to(guild=guild)
         await bot.tree.sync(guild=guild)
+        print(f"[Bot] 슬래시 커맨드 길드({guild_id}) 즉시 동기화 완료")
     await bot.tree.sync()
     print(f"[Bot] {bot.user} 로그인 완료")
     print("[Bot] 슬래시 커맨드 전역 동기화 완료")
