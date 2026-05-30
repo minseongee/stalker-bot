@@ -1,13 +1,18 @@
 import asyncio
+import datetime
 import os
 import traceback
 
 import aiohttp
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 
-from utils.summarizer import get_cache_time_kst, _build_hot_news_embeds
+from utils.summarizer import (
+    get_cache_time_kst,
+    _build_hot_news_embeds,
+    summarize_market_briefing,
+)
 from utils.chart import fetch_chart, supported_codes
 from server.database import (
     get_watchlist, add_to_watchlist, remove_from_watchlist,
@@ -16,6 +21,14 @@ from server.database import (
 from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
 
 SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
+
+_KST = datetime.timezone(datetime.timedelta(hours=9))
+_NEWS_TIMES = [
+    datetime.time(hour=8,  tzinfo=_KST),
+    datetime.time(hour=12, tzinfo=_KST),
+    datetime.time(hour=16, tzinfo=_KST),
+    datetime.time(hour=21, tzinfo=_KST),
+]
 
 _last_broadcast_cluster_ids: set[str] = set()  # 중복 브로드캐스트 방지
 
@@ -377,9 +390,40 @@ class General(commands.Cog):
         from news.pipeline import register_hot_callback
         register_hot_callback(self._on_hot_news)
         print("[뉴스] hot news 콜백 등록 완료")
+        self.daily_briefing.start()
 
     def cog_unload(self):
-        pass
+        self.daily_briefing.cancel()
+
+    @tasks.loop(time=_NEWS_TIMES)
+    async def daily_briefing(self):
+        try:
+            summary = await summarize_market_briefing()
+            if not summary:
+                print("[브리핑] 수집된 기사 없음, 건너뜀")
+                return
+            embed = discord.Embed(
+                title="📰 시장 브리핑",
+                description=summary,
+                color=discord.Color.green(),
+            )
+            embed.set_footer(text=f"마지막 업데이트: {get_cache_time_kst() or '-'}")
+            for row in get_all_news_channels():
+                ch = self.bot.get_channel(int(row["channel_id"]))
+                if ch is None:
+                    continue
+                try:
+                    await ch.send(embed=embed)
+                    print(f"[브리핑] 채널 {row['channel_id']} 전송 완료")
+                except Exception as e:
+                    print(f"[브리핑] 채널 {row['channel_id']} 전송 실패: {e}")
+        except Exception:
+            print("[브리핑] daily_briefing 오류:")
+            traceback.print_exc()
+
+    @daily_briefing.before_loop
+    async def before_daily_briefing(self):
+        await self.bot.wait_until_ready()
 
     def _on_hot_news(self, refined_list: list[dict]) -> None:
         """pipeline.py에서 새 핫뉴스 정제 완료 시 호출 (동기 콜백)."""

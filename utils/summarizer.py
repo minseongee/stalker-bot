@@ -1,14 +1,32 @@
-"""
-기존 GPT 웹검색 방식 → RSS/DART 파이프라인으로 교체.
-get_cached_news() / get_cache_time_kst() 시그니처는 유지해 기존 호출부 호환.
-summarize_news()는 삭제하고 cogs/general.py에서 직접 DB 조회로 대체.
-"""
 import json
+import time
 from datetime import datetime, timezone, timedelta
 
-from server.database import get_hot_news, get_latest_hot_news_time
+from openai import AsyncOpenAI
+
+from server.database import get_hot_news, get_latest_hot_news_time, get_recent_news_items
 
 _KST = timezone(timedelta(hours=9))
+
+_client: AsyncOpenAI | None = None
+
+def _get_client() -> AsyncOpenAI:
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI()
+    return _client
+
+_BRIEFING_PROMPT = """당신은 한국 주식 시장 전문 기자입니다.
+아래 기사 목록을 바탕으로 오늘의 시장 동향을 신문 브리핑 형식으로 작성해주세요.
+
+작성 규칙:
+- 전체 길이는 1500자 이내
+- 주요 이슈 3~5개를 각각 2~3문장으로 설명
+- 각 이슈 앞에 이모지 불렛(예: 📌 📉 📈 💹 🏦) 사용
+- 투자자 관점에서 핵심만 간결하게, 원문을 그대로 복제하지 말 것
+- 한국어로 작성
+- 마지막 줄에 오늘 검색해볼 만한 키워드 3~5개를 아래 형식으로 추가
+  형식: 🔍 오늘의 키워드: #키워드1 #키워드2 #키워드3"""
 
 
 def get_cached_news() -> str | None:
@@ -31,6 +49,34 @@ def get_cache_time_kst() -> str | None:
         return None
     dt = datetime.fromtimestamp(ts, tz=_KST)
     return dt.strftime("%Y-%m-%d %H:%M KST")
+
+
+async def summarize_market_briefing(window_hours: int = 6) -> str | None:
+    """최근 수집된 기사들을 GPT로 요약해 시장 브리핑 텍스트 반환."""
+    since = int(time.time()) - 3600 * window_hours
+    rows = get_recent_news_items(limit=60, since=since)
+    if not rows:
+        return None
+
+    articles = "\n".join(
+        f"- [{r['source']}] {r['title']}"
+        for r in rows
+    )
+    user_msg = f"최근 {window_hours}시간 기사 목록:\n{articles}"
+
+    try:
+        resp = await _get_client().responses.create(
+            model="gpt-5.4-mini",
+            input=[
+                {"role": "system", "content": _BRIEFING_PROMPT},
+                {"role": "user",   "content": user_msg},
+            ],
+            store=False,
+        )
+        return resp.output_text.strip()
+    except Exception as e:
+        print(f"[Briefing] GPT 호출 실패: {e}")
+        return None
 
 
 def _build_hot_news_embeds() -> list[dict]:
