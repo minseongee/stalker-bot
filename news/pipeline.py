@@ -44,8 +44,10 @@ async def _run_once() -> None:
     per_source = {}
     for item in new_items:
         per_source[item["source"]] = per_source.get(item["source"], 0) + 1
-    source_str = " | ".join(f"{s} {n}건" for s, n in per_source.items())
-    print(f"[{kst}] [뉴스수집] 총 {len(new_items)}건 (신규 {len(inserted)}건) — {source_str}")
+    rss_sources = ["연합뉴스", "한국경제", "매일경제"]
+    rss_str = " | ".join(f"{s} {per_source.get(s, 0)}건" for s in rss_sources)
+    dart_str = f"DART {per_source.get('DART', 0)}건"
+    print(f"[{kst}] [뉴스수집] 총 {len(new_items)}건 (신규 {len(inserted)}건) — {rss_str} | {dart_str}")
 
     # 2) 클러스터링 (최근 6시간 기사 전체 대상으로 재계산)
     since = int(time.time()) - 3600 * 6
