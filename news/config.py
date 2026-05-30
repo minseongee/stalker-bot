@@ -2,9 +2,15 @@ import os
 
 # ── RSS 피드 설정 ─────────────────────────────────────────────────────────────
 RSS_FEEDS = [
-    {"source": "연합뉴스",  "url": "https://www.yna.co.kr/rss/economy.xml"},
-    {"source": "한국경제",  "url": "https://www.hankyung.com/feed/economy"},
-    {"source": "매일경제",  "url": "https://www.mk.co.kr/rss/40300001/"},
+    {"source": "연합뉴스",    "url": "https://www.yna.co.kr/rss/economy.xml"},
+    {"source": "한국경제",    "url": "https://www.hankyung.com/feed/economy"},
+    {"source": "한경 증권",   "url": "https://www.hankyung.com/feed/finance"},
+    {"source": "한경 IT",     "url": "https://www.hankyung.com/feed/it"},
+    {"source": "한경 국제",   "url": "https://www.hankyung.com/feed/international"},
+    {"source": "매일경제",    "url": "https://www.mk.co.kr/rss/40300001/"},
+    {"source": "매경 증권",   "url": "https://www.mk.co.kr/rss/50200011/"},
+    {"source": "매경 산업",   "url": "https://www.mk.co.kr/rss/50400012/"},
+    {"source": "매경 글로벌", "url": "https://www.mk.co.kr/rss/30100041/"},
 ]
 
 # ── DART 전자공시 API ─────────────────────────────────────────────────────────
