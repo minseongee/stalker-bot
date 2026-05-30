@@ -375,7 +375,7 @@ class General(commands.Cog):
     def cog_unload(self):
         self.refresh_news.cancel()
 
-    @tasks.loop(hours=1)
+    @tasks.loop(hours=4)
     async def refresh_news(self):
         global _news_embed, _news_loading
         _news_loading = True
