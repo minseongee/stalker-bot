@@ -431,14 +431,18 @@ class General(commands.Cog):
 
     async def _broadcast_hot_news(self, refined_list: list[dict]) -> None:
         global _last_broadcast_cluster_ids
-        channels = get_news_channels_by_type("hot")
-        if not channels:
-            return
         for news in refined_list:
             cid = news.get("cluster_id", "")
             if cid in _last_broadcast_cluster_ids:
                 continue
             _last_broadcast_cluster_ids.add(cid)
+
+            is_dart = any(s.get("source") == "DART" for s in news.get("sources", []))
+            ch_type = "dart" if is_dart else "hot"
+            channels = get_news_channels_by_type(ch_type)
+            if not channels:
+                continue
+
             embed = _build_hot_embed(news)
             for row in channels:
                 ch = self.bot.get_channel(int(row["channel_id"]))
@@ -446,9 +450,9 @@ class General(commands.Cog):
                     continue
                 try:
                     await ch.send(embed=embed)
-                    print(f"[뉴스] 채널 {row['channel_id']} 핫뉴스 전송: {news['headline']}")
+                    print(f"[{ch_type.upper()}] 채널 {row['channel_id']} 전송: {news['headline']}")
                 except Exception as e:
-                    print(f"[뉴스] 채널 {row['channel_id']} 전송 실패: {e}")
+                    print(f"[{ch_type.upper()}] 채널 {row['channel_id']} 전송 실패: {e}")
 
     @app_commands.command(name="핫뉴스채널", description="이 채널을 실시간 핫뉴스 채널로 지정합니다. (관리자 전용)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -473,6 +477,24 @@ class General(commands.Cog):
 
     @set_hot_ch.error
     async def set_hot_ch_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        if isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message("이 명령어는 서버 관리자만 사용할 수 있습니다.", ephemeral=True)
+
+    @app_commands.command(name="dart채널", description="이 채널을 DART 공시 전용 채널로 지정합니다. (관리자 전용)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_dart_ch(self, interaction: discord.Interaction):
+        if interaction.guild is None:
+            await interaction.response.send_message("서버 채널에서만 사용할 수 있습니다.", ephemeral=True)
+            return
+        set_news_channel(str(interaction.guild_id), str(interaction.channel_id), "dart")
+        await interaction.response.send_message(
+            f"✅ <#{interaction.channel_id}>을 **DART 공시** 채널로 지정했습니다.\n"
+            "전자공시(유상증자·합병·실적 등)가 접수되면 즉시 전송됩니다.",
+            ephemeral=True,
+        )
+
+    @set_dart_ch.error
+    async def set_dart_ch_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         if isinstance(error, app_commands.MissingPermissions):
             await interaction.response.send_message("이 명령어는 서버 관리자만 사용할 수 있습니다.", ephemeral=True)
 
