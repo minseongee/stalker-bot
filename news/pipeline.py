@@ -39,10 +39,7 @@ async def _run_once() -> None:
         if upsert_news_item(item):
             inserted.append(item)
 
-    if not inserted:
-        return
-
-    print(f"[Pipeline] 신규 기사 {len(inserted)}건 수집")
+    print(f"[Pipeline] 수집 {len(new_items)}건 / 신규 {len(inserted)}건")
 
     # 2) 클러스터링 (최근 6시간 기사 전체 대상으로 재계산)
     since = int(time.time()) - 3600 * 6
@@ -106,7 +103,6 @@ async def _run_once() -> None:
                 stock_tags,
                 sources_json,
             )
-        mark_cluster_refined(cid)
         print(f"[Pipeline] 클러스터 {cid[:8]}… 정제 완료: {refined['headline']}")
 
         newly_refined.append({
