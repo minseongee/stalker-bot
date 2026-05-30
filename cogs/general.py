@@ -442,11 +442,15 @@ class General(commands.Cog):
             _last_broadcast_cluster_ids.add(cid)
 
             is_dart = any(s.get("source") == "DART" for s in news.get("sources", []))
-            ch_type = "dart" if is_dart else "hot"
-            channels = get_news_channels_by_type(ch_type)
+            channels = get_news_channels_by_type("dart") if is_dart else []
             if not channels:
-                print(f"[{ch_type.upper()}] 채널 미배정 — /{'dart채널' if is_dart else '핫뉴스채널'} 명령어로 채널을 지정해주세요.")
+                if is_dart:
+                    print("[DART] dart채널 미배정 — 핫뉴스채널로 대신 전송합니다.")
+                channels = get_news_channels_by_type("hot")
+            if not channels:
+                print("[HOT] 채널 미배정 — /핫뉴스채널 명령어로 채널을 지정해주세요.")
                 continue
+            ch_type = "dart" if is_dart else "hot"
 
             embed = _build_hot_embed(news)
             for row in channels:
