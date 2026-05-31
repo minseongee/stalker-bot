@@ -550,6 +550,44 @@ class General(commands.Cog):
                 "이 명령어는 서버 관리자만 사용할 수 있습니다.", ephemeral=True
             )
 
+    @app_commands.command(name="브리핑강제실행", description="브리핑을 즉시 실행합니다. (봇 소유자 전용)")
+    async def force_briefing(self, interaction: discord.Interaction):
+        if not await self.bot.is_owner(interaction.user):
+            await interaction.response.send_message("봇 소유자만 사용할 수 있습니다.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            summary = await summarize_market_briefing()
+            if not summary:
+                await interaction.followup.send("⚠️ 수집된 기사가 없어 브리핑을 생성할 수 없습니다.", ephemeral=True)
+                return
+            embed = discord.Embed(
+                title="📰 시장 브리핑",
+                description=summary,
+                color=discord.Color.green(),
+            )
+            now_kst = datetime.datetime.now(tz=_KST).strftime('%Y-%m-%d %H:%M KST')
+            embed.set_footer(text=f'브리핑 생성: {now_kst}')
+            briefing_channels = get_news_channels_by_type("briefing")
+            if not briefing_channels:
+                await interaction.followup.send("⚠️ 브리핑 채널이 지정되지 않았습니다.", ephemeral=True)
+                return
+            count = 0
+            for row in briefing_channels:
+                ch = self.bot.get_channel(int(row["channel_id"]))
+                if ch is None:
+                    continue
+                try:
+                    await ch.send(embed=embed)
+                    count += 1
+                except Exception as e:
+                    print(f"[브리핑] 강제실행 채널 {row['channel_id']} 전송 실패: {e}")
+            await interaction.followup.send(f"✅ 브리핑을 {count}개 채널에 전송했습니다.", ephemeral=True)
+            print(f"[브리핑] 강제실행 완료 ({count}개 채널)")
+        except Exception as e:
+            await interaction.followup.send(f"⚠️ 오류 발생: {e}", ephemeral=True)
+            print(f"[브리핑] 강제실행 오류: {e}")
+
     @commands.Cog.listener()
     async def on_ready(self):
         print(f"[General] Cog 로드 완료")

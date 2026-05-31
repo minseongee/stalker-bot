@@ -424,10 +424,31 @@ def mark_cluster_refined(cluster_id: str) -> None:
         )
 
 
+def purge_old_news(days: int = 7) -> int:
+    cutoff = int(time.time()) - 3600 * 24 * days
+    with _conn() as conn:
+        conn.execute("DELETE FROM news_items WHERE fetched_at < ?", (cutoff,))
+        conn.execute(
+            """DELETE FROM news_clusters WHERE cluster_id NOT IN (
+               SELECT DISTINCT cluster_id FROM news_items WHERE cluster_id IS NOT NULL)"""
+        )
+        deleted = conn.execute("SELECT changes()").fetchone()[0]
+    return deleted
+
+
 def get_unrefined_hot_clusters() -> list[dict]:
+    since = int(time.time()) - 3600 * 24
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM news_clusters WHERE is_hot=1 AND refined_at IS NULL ORDER BY hot_score DESC"
+            """SELECT nc.* FROM news_clusters nc
+               WHERE nc.is_hot=1 AND nc.refined_at IS NULL
+                 AND EXISTS (
+                   SELECT 1 FROM news_items ni
+                   WHERE ni.cluster_id = nc.cluster_id
+                     AND ni.fetched_at >= ?
+                 )
+               ORDER BY nc.hot_score DESC""",
+            (since,),
         ).fetchall()
         return [dict(r) for r in rows]
 

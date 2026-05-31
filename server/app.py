@@ -17,6 +17,7 @@ from .database import (
     delete_channel,
     get_channels,
     get_hot_news,
+    get_recent_news_items,
     init_db,
     save_channel,
     update_channel_alert,
@@ -74,6 +75,36 @@ app.mount("/static", StaticFiles(directory=_STATIC), name="static")
 @app.get("/editor")
 def editor_page():
     return FileResponse(_STATIC / "editor.html")
+
+
+@app.get("/dashboard")
+def dashboard_page():
+    return FileResponse(_STATIC / "dashboard.html")
+
+
+@app.get("/api/news")
+def news_dashboard(limit: int = Query(default=200, le=1000), hot_only: bool = False):
+    if hot_only:
+        rows = get_hot_news(limit=limit)
+    else:
+        rows = get_recent_news_items(limit=limit)
+    import json as _json
+    result = []
+    for r in rows:
+        result.append({
+            "id":          r["id"],
+            "title":       r["title"],
+            "url":         r["url"],
+            "source":      r["source"],
+            "published_at": r["published_at"],
+            "fetched_at":  r["fetched_at"],
+            "hot_score":   round(r["hot_score"] or 0, 2),
+            "is_hot":      bool(r["is_hot"]),
+            "direction":   r["direction"] or "",
+            "headline":    r["headline"] or "",
+            "stock_tags":  _json.loads(r["stock_tags"]) if r.get("stock_tags") else [],
+        })
+    return result
 
 
 @app.get("/ohlcv/{code}")

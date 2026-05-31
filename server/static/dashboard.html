@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>뉴스 대시보드</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { display: flex; flex-direction: column; font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; font-size: 13px; }
+
+  #header {
+    flex-shrink: 0;
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; background: #1a1d27; border-bottom: 1px solid #2a2d3a;
+    flex-wrap: wrap;
+  }
+  #header h1 { font-size: 15px; font-weight: 600; color: #fff; white-space: nowrap; }
+  .badge { background: #2a2d3a; border-radius: 4px; padding: 2px 8px; font-size: 11px; color: #aaa; white-space: nowrap; }
+  .badge span { color: #7dd3fc; font-weight: 600; }
+  .controls { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+  .controls input[type=text] {
+    background: #2a2d3a; border: 1px solid #3a3d4a; border-radius: 6px;
+    color: #e0e0e0; padding: 4px 10px; font-size: 12px; width: 160px; outline: none;
+  }
+  .controls input[type=text]:focus { border-color: #7dd3fc; }
+  .controls select {
+    background: #2a2d3a; border: 1px solid #3a3d4a; border-radius: 6px;
+    color: #e0e0e0; padding: 4px 8px; font-size: 12px; outline: none;
+  }
+  .btn { border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; background: #2a2d3a; border: 1px solid #3a3d4a; color: #aaa; }
+  .btn.active { background: #1e3a5f; border-color: #7dd3fc; color: #7dd3fc; }
+  .btn-blue { background: #1e3a5f; border: 1px solid #7dd3fc; color: #7dd3fc; }
+  .btn-blue:hover { background: #2a4d7f; }
+
+  .table-wrap { flex: 1; overflow: auto; }
+
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  col.c-time   { width: 88px; }
+  col.c-source { width: 90px; }
+  col.c-title  { min-width: 260px; }
+  col.c-hl     { width: 220px; }
+  col.c-score  { width: 110px; }
+  col.c-hot    { width: 46px; }
+  col.c-dir    { width: 44px; }
+  col.c-tags   { width: 150px; }
+
+  thead th {
+    position: sticky; top: 0; z-index: 10;
+    background: #1a1d27; padding: 7px 10px; text-align: left;
+    font-size: 10px; font-weight: 700; color: #777; text-transform: uppercase;
+    letter-spacing: .4px; border-bottom: 2px solid #2a2d3a;
+    cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  thead th:hover { color: #ccc; }
+  thead th.sorted { color: #7dd3fc; }
+  .sort-arrow { margin-left: 3px; }
+
+  tbody tr { border-bottom: 1px solid #1a1d28; }
+  tbody tr:hover { background: #181b26; }
+  tbody tr.hot-row { background: #141e2e; }
+  tbody tr.hot-row:hover { background: #1a2a40; }
+  td { padding: 6px 10px; vertical-align: middle; overflow: hidden; }
+
+  .td-time { color: #666; font-size: 11px; white-space: nowrap; }
+  .src-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px; background: #252836; color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 84px; }
+  .td-title a { color: #c0cfea; text-decoration: none; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .td-title a:hover { color: #7dd3fc; }
+  .td-hl { color: #999; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .score-wrap { display: flex; align-items: center; gap: 5px; justify-content: flex-end; }
+  .score-num { font-size: 11px; font-variant-numeric: tabular-nums; min-width: 32px; text-align: right; }
+  .score-bar { height: 5px; border-radius: 3px; background: #252836; width: 48px; flex-shrink: 0; overflow: hidden; }
+  .score-fill { height: 100%; border-radius: 3px; }
+
+  .hot-badge { background: #c2410c; color: #fff; font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 8px; }
+  .dir-pos { color: #4ade80; }
+  .dir-neg { color: #f87171; }
+  .dir-neu { color: #444; }
+  .tags { display: flex; gap: 3px; flex-wrap: wrap; }
+  .tag { background: #1e2535; border-radius: 3px; padding: 1px 5px; font-size: 10px; color: #5ba0d0; white-space: nowrap; }
+  .empty, .loading { text-align: center; padding: 60px; color: #555; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>📰 뉴스 대시보드</h1>
+  <div class="badge">총 <span id="total-count">-</span>건</div>
+  <div class="badge">핫뉴스 <span id="hot-count">-</span>건</div>
+  <div class="controls">
+    <input type="text" id="search" placeholder="제목 / 출처 / 태그…">
+    <select id="source-filter"><option value="">전체 출처</option></select>
+    <button class="btn" id="hot-toggle">🔥 핫뉴스만</button>
+    <button class="btn btn-blue" id="refresh-btn">↻ 새로고침</button>
+    <span class="badge" id="updated-at" style="color:#555">-</span>
+  </div>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <colgroup>
+      <col class="c-time"><col class="c-source"><col class="c-title">
+      <col class="c-hl"><col class="c-score"><col class="c-hot">
+      <col class="c-dir"><col class="c-tags">
+    </colgroup>
+    <thead>
+      <tr>
+        <th data-col="fetched_at" class="sorted">수집시각<span class="sort-arrow">▼</span></th>
+        <th data-col="source">출처<span class="sort-arrow">↕</span></th>
+        <th data-col="title">제목<span class="sort-arrow">↕</span></th>
+        <th data-col="headline">헤드라인(GPT)<span class="sort-arrow">↕</span></th>
+        <th data-col="hot_score" style="text-align:right">핫점수<span class="sort-arrow">↕</span></th>
+        <th data-col="is_hot">핫<span class="sort-arrow">↕</span></th>
+        <th data-col="direction" style="text-align:center">방향<span class="sort-arrow">↕</span></th>
+        <th data-col="stock_tags">태그<span class="sort-arrow">↕</span></th>
+      </tr>
+    </thead>
+    <tbody id="tbody">
+      <tr><td colspan="8" class="loading">불러오는 중…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+let allData = [], sortCol = 'fetched_at', sortAsc = false, hotOnly = false, maxScore = 1;
+
+const fmtTime = ts => {
+  if (!ts) return '-';
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString('ko-KR',{month:'2-digit',day:'2-digit'}) + ' '
+       + d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false});
+};
+const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+async function load() {
+  try {
+    const res = await fetch('/api/news?limit=500');
+    allData = await res.json();
+    maxScore = Math.max(1, ...allData.map(r => r.hot_score));
+
+    const sel = document.getElementById('source-filter');
+    const cur = sel.value;
+    const sources = [...new Set(allData.map(r => r.source))].sort();
+    sel.innerHTML = '<option value="">전체 출처</option>'
+      + sources.map(s => `<option${s===cur?' selected':''}>${esc(s)}</option>`).join('');
+
+    document.getElementById('updated-at').textContent =
+      new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    render();
+  } catch(e) {
+    document.getElementById('tbody').innerHTML =
+      `<tr><td colspan="8" class="empty">로드 실패: ${e.message}</td></tr>`;
+  }
+}
+
+function render() {
+  const search = document.getElementById('search').value.toLowerCase();
+  const srcFilter = document.getElementById('source-filter').value;
+
+  let rows = allData.filter(r => {
+    if (hotOnly && !r.is_hot) return false;
+    if (srcFilter && r.source !== srcFilter) return false;
+    if (search) {
+      const hay = [r.title, r.source, r.headline, ...(r.stock_tags||[])].join(' ').toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  rows.sort((a,b) => {
+    let va = a[sortCol], vb = b[sortCol];
+    if (Array.isArray(va)) va = va.length;
+    if (Array.isArray(vb)) vb = vb.length;
+    if (va===vb) return 0;
+    return (sortAsc?1:-1)*(va<vb?-1:1);
+  });
+
+  document.getElementById('total-count').textContent = allData.length;
+  document.getElementById('hot-count').textContent = allData.filter(r=>r.is_hot).length;
+
+  const tbody = document.getElementById('tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">해당하는 기사가 없습니다</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => {
+    const pct = Math.min(100,(r.hot_score/maxScore)*100).toFixed(1);
+    const barColor = r.is_hot?'#f97316':r.hot_score>maxScore*0.4?'#eab308':'#3b82f6';
+    const dirClass = r.direction==='positive'?'dir-pos':r.direction==='negative'?'dir-neg':'dir-neu';
+    const dirLabel = r.direction==='positive'?'📈':r.direction==='negative'?'📉':'—';
+    const tags = (r.stock_tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
+    return `<tr class="${r.is_hot?'hot-row':''}">
+      <td class="td-time">${fmtTime(r.fetched_at)}</td>
+      <td><span class="src-badge" title="${esc(r.source)}">${esc(r.source)}</span></td>
+      <td class="td-title"><a href="${esc(r.url)}" target="_blank" title="${esc(r.title)}">${esc(r.title)}</a></td>
+      <td class="td-hl" title="${esc(r.headline)}">${esc(r.headline)}</td>
+      <td><div class="score-wrap">
+        <span class="score-num">${r.hot_score.toFixed(2)}</span>
+        <div class="score-bar"><div class="score-fill" style="width:${pct}%;background:${barColor}"></div></div>
+      </div></td>
+      <td>${r.is_hot?'<span class="hot-badge">HOT</span>':''}</td>
+      <td class="${dirClass}" style="text-align:center">${dirLabel}</td>
+      <td><div class="tags">${tags}</div></td>
+    </tr>`;
+  }).join('');
+}
+
+document.querySelectorAll('thead th[data-col]').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.col;
+    if (sortCol===col) sortAsc=!sortAsc; else {sortCol=col; sortAsc=false;}
+    document.querySelectorAll('thead th').forEach(t => {
+      t.classList.remove('sorted');
+      t.querySelector('.sort-arrow').textContent = '↕';
+    });
+    th.classList.add('sorted');
+    th.querySelector('.sort-arrow').textContent = sortAsc?'▲':'▼';
+    render();
+  });
+});
+
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('source-filter').addEventListener('change', render);
+document.getElementById('hot-toggle').addEventListener('click', function(){
+  hotOnly=!hotOnly; this.classList.toggle('active',hotOnly); render();
+});
+document.getElementById('refresh-btn').addEventListener('click', load);
+
+setInterval(load, 30000);
+load();
+</script>
+</body>
+</html>
