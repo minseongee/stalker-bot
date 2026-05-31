@@ -97,7 +97,13 @@ def _build_hot_embed(news: dict) -> discord.Embed:
         )
         embed.add_field(name="출처", value=source_lines, inline=False)
 
-    embed.set_footer(text=f"마지막 업데이트: {get_cache_time_kst() or '-'}")
+    ft = news.get('fetched_at')
+    if ft:
+        dt = datetime.datetime.fromtimestamp(ft, tz=_KST)
+        ts = dt.strftime('%Y-%m-%d %H:%M KST')
+    else:
+        ts = get_cache_time_kst() or '-'
+    embed.set_footer(text=f'수집 시각: {ts}')
     return embed
 
 
@@ -408,7 +414,8 @@ class General(commands.Cog):
                 description=summary,
                 color=discord.Color.green(),
             )
-            embed.set_footer(text=f"마지막 업데이트: {get_cache_time_kst() or '-'}")
+            now_kst = datetime.datetime.now(tz=_KST).strftime('%Y-%m-%d %H:%M KST')
+            embed.set_footer(text=f'브리핑 생성: {now_kst}')
             briefing_channels = get_news_channels_by_type("briefing")
             if not briefing_channels:
                 print("[브리핑] 채널 미배정 — /브리핑채널 명령어로 채널을 지정해주세요.")

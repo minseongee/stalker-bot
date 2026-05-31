@@ -118,8 +118,10 @@ async def _run_once() -> None:
             )
         print(f"[Pipeline] 클러스터 {cid[:8]}… 정제 완료: {refined['headline']}")
 
+        fetched_at = max((item.get("fetched_at") or 0) for item in items_in_cluster)
         newly_refined.append({
             "cluster_id": cid,
+            "fetched_at": fetched_at,
             **refined,
         })
 

@@ -55,6 +55,7 @@ async def summarize_market_briefing(window_hours: int = 6) -> str | None:
     )
     user_msg = f"최근 {window_hours}시간 기사 목록:\n{articles}"
 
+    print(f"[브리핑] GPT 요청 중 (기사 {len(rows)}건, 최근 {window_hours}시간)")
     try:
         resp = await get_openai_client().responses.create(
             model="gpt-5.4-mini",
@@ -64,9 +65,11 @@ async def summarize_market_briefing(window_hours: int = 6) -> str | None:
             ],
             store=False,
         )
-        return resp.output_text.strip()
+        result = resp.output_text.strip()
+        print(f"[브리핑] GPT 응답 완료")
+        return result
     except Exception as e:
-        print(f"[Briefing] GPT 호출 실패: {e}")
+        print(f"[브리핑] GPT 호출 실패: {e}")
         return None
 
 
