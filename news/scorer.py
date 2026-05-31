@@ -9,6 +9,8 @@ from .config import (
     HOT_SCORE_THRESHOLD,
     SOURCE_COUNT_CAP,
     SOURCE_COUNT_WEIGHT,
+    STOCK_PRICE_BONUS,
+    STOCK_PRICE_KEYWORDS,
 )
 
 
@@ -49,30 +51,38 @@ def _score_keywords(sig: ClusterSignal) -> float:
 
 
 def _score_dart(sig: ClusterSignal) -> float:
-    """DART 공시가 포함된 클러스터는 기본 50점 보너스."""
+    """DART 공시가 포함된 클러스터는 기본 30점 보너스."""
     if "DART" not in sig.sources:
         return 0.0
     combined = " ".join(sig.titles)
     # 중요 공시 키워드별 추가 보너스
     dart_keywords = [
-        ("유상증자", 20.0), ("무상증자", 15.0), ("자기주식", 15.0),
-        ("합병", 25.0), ("분할", 20.0), ("영업양수", 20.0), ("영업양도", 20.0),
-        ("최대주주", 15.0), ("대표이사", 10.0), ("감사의견", 20.0),
-        ("상장폐지", 30.0), ("관리종목", 25.0), ("횡령", 30.0), ("배임", 30.0),
-        ("실적", 10.0), ("배당", 10.0),
+        ("유상증자", 10.0), ("무상증자",  8.0), ("자기주식",  8.0),
+        ("합병",    12.0), ("분할",     10.0), ("영업양수", 10.0), ("영업양도", 10.0),
+        ("최대주주", 8.0), ("대표이사",  5.0), ("감사의견", 10.0),
+        ("상장폐지", 15.0), ("관리종목", 12.0), ("횡령",    15.0), ("배임",    15.0),
+        ("실적",     5.0), ("배당",      5.0),
     ]
-    bonus = 50.0
+    bonus = 30.0
     seen: set[str] = set()
     for kw, w in dart_keywords:
         if kw not in seen and kw in combined:
             bonus += w
             seen.add(kw)
-    return min(bonus, 100.0)
+    return min(bonus, 60.0)
+
+
+def _score_stock_price(sig: ClusterSignal) -> float:
+    """주가 움직임 키워드가 2개 이상 등장하면 보너스 추가."""
+    combined = " ".join(sig.titles)
+    hit = sum(1 for kw in STOCK_PRICE_KEYWORDS if kw in combined)
+    return STOCK_PRICE_BONUS if hit >= 2 else 0.0
 
 
 register_scorer("source_count", _score_source_count)
 register_scorer("keywords",     _score_keywords)
 register_scorer("dart",         _score_dart)
+register_scorer("stock_price",  _score_stock_price)
 
 
 # ── 공개 API ──────────────────────────────────────────────────────────────────

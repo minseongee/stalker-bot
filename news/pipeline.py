@@ -31,19 +31,46 @@ def register_hot_callback(fn: Callable[[list[dict]], None]) -> None:
     _hot_callbacks.append(fn)
 
 
-async def _refine_and_broadcast(hot_cluster_ids: list[str]) -> None:
+async def _refine_and_broadcast(hot_clusters: dict[str, float]) -> None:
     """미정제 핫 클러스터를 GPT로 정제하고 콜백으로 전송."""
     # DB에 is_hot=1인 미정제 클러스터도 포함 (수동 업데이트 등)
     from server.database import get_unrefined_hot_clusters
-    extra_ids = [r["cluster_id"] for r in get_unrefined_hot_clusters()
-                 if r["cluster_id"] not in hot_cluster_ids]
-    all_ids = hot_cluster_ids + extra_ids
+    extra_rows = {r["cluster_id"]: r["hot_score"]
+                  for r in get_unrefined_hot_clusters()
+                  if r["cluster_id"] not in hot_clusters}
+    all_clusters = {**hot_clusters, **extra_rows}
 
     newly_refined: list[dict] = []
-    for cid in all_ids:
+    for cid, hot_score in all_clusters.items():
         items_in_cluster = get_cluster_items(cid)
-        if any(item.get("summary") for item in items_in_cluster):
+        has_summary   = [i for i in items_in_cluster if i.get("summary")]
+        needs_summary = [i for i in items_in_cluster if not i.get("summary")]
+
+        if has_summary and needs_summary:
+            # 재클러스터링으로 새 기사가 편입된 경우 — GPT 재호출 없이 기존 요약 복사
+            donor = has_summary[0]
+            sources_json = json.dumps(
+                [{"source": i["source"], "url": i["url"]} for i in items_in_cluster],
+                ensure_ascii=False,
+            )
+            for item in needs_summary:
+                update_news_refined(
+                    item["guid"],
+                    donor["summary"],
+                    donor["headline"],
+                    donor["direction"],
+                    donor.get("stock_tags") or "[]",
+                    sources_json,
+                )
+            print(f"[Pipeline] 클러스터 {cid[:8]}… 편입 기사 {len(needs_summary)}건 요약 복사")
+            mark_cluster_refined(cid)
             continue
+
+        if has_summary:
+            # 모두 이미 처리됨 — refined_at만 기록
+            mark_cluster_refined(cid)
+            continue
+
         refined = await refine_cluster(cid, items_in_cluster)
         if refined is None:
             continue
@@ -67,6 +94,7 @@ async def _refine_and_broadcast(hot_cluster_ids: list[str]) -> None:
         newly_refined.append({
             "cluster_id": cid,
             "fetched_at": fetched_at,
+            "hot_score":  hot_score,
             **refined,
         })
 
@@ -82,7 +110,7 @@ async def _run_once() -> None:
     # 1) 수집
     new_items = await collect_all()
     if not new_items:
-        await _refine_and_broadcast([])
+        await _refine_and_broadcast({})
         return
 
     inserted: list[dict] = []
@@ -101,7 +129,7 @@ async def _run_once() -> None:
     print(f"[{kst}] [뉴스수집] 총 {len(new_items)}건 (신규 {len(inserted)}건) — {rss_str} | {dart_str}")
 
     if not inserted:
-        await _refine_and_broadcast([])
+        await _refine_and_broadcast({})
         return
 
     # 2) 클러스터링 (최근 6시간 기사 전체 대상으로 재계산)
@@ -119,7 +147,7 @@ async def _run_once() -> None:
             False,
         )
 
-    hot_cluster_ids: list[str] = []
+    hot_clusters: dict[str, float] = {}
     for cid, meta in cluster_meta.items():
         items_in_cluster = [i for i in clustered if i.get("cluster_id") == cid]
         titles = [i["title"] for i in items_in_cluster]
@@ -138,10 +166,10 @@ async def _run_once() -> None:
             update_news_cluster(guid, cid, score, hot)
 
         if hot:
-            hot_cluster_ids.append(cid)
+            hot_clusters[cid] = score
 
     # 4) 핫 클러스터 정제 + 미처리 핫 클러스터 병합 처리
-    await _refine_and_broadcast(hot_cluster_ids)
+    await _refine_and_broadcast(hot_clusters)
 
 
 _PURGE_INTERVAL = 3600 * 24  # 하루 한 번 정리

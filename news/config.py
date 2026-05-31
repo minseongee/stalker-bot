@@ -25,10 +25,23 @@ CLUSTER_SIMILARITY_THRESHOLD: float = 0.35   # 자카드 유사도 임계값
 CLUSTER_WINDOW_SECONDS: int = 3600 * 6       # 같은 클러스터로 묶을 최대 시간 간격
 
 # ── 핫뉴스 판별 ───────────────────────────────────────────────────────────────
-HOT_SCORE_THRESHOLD: float = float(os.getenv("HOT_SCORE_THRESHOLD", "70"))
+HOT_SCORE_THRESHOLD: float  = float(os.getenv("HOT_SCORE_THRESHOLD",  "70"))
+HOT_EMPHASIS_THRESHOLD: float = float(os.getenv("HOT_EMPHASIS_THRESHOLD", "60"))
 
 # 주가 영향 키워드 (hot_score에 가산)
 HOT_KEYWORDS: list[tuple[str, float]] = [
+    # 주가·시세 직접 관련
+    ("주가",      15.0),
+    ("급등",      18.0),
+    ("급락",      20.0),
+    ("폭등",      20.0),
+    ("폭락",      25.0),
+    ("상한가",    22.0),
+    ("하한가",    25.0),
+    ("목표주가",  12.0),
+    ("시가총액",  10.0),
+    ("증시",       8.0),
+    # 기업 이벤트
     ("실적",     15.0),
     ("영업이익",  15.0),
     ("순이익",    12.0),
@@ -50,12 +63,20 @@ HOT_KEYWORDS: list[tuple[str, float]] = [
     ("리콜",      18.0),
     ("과징금",    15.0),
     ("제재",      15.0),
+    # 거시경제
     ("금리",      10.0),
     ("기준금리",  12.0),
-    ("환율",      8.0),
-    ("코스피",    5.0),
-    ("코스닥",    5.0),
+    ("환율",      10.0),
+    ("코스피",    10.0),
+    ("코스닥",    10.0),
 ]
+
+# 주가 움직임 키워드 — 2개 이상 동시 등장 시 보너스 판정에 사용
+STOCK_PRICE_KEYWORDS: list[str] = [
+    "주가", "급등", "급락", "폭등", "폭락", "상한가", "하한가",
+    "코스피", "코스닥", "증시", "시가총액", "목표주가",
+]
+STOCK_PRICE_BONUS: float = 15.0   # 2개 이상 등장 시 추가 보너스
 
 # 매체 수에 따른 가산 (클러스터 소스 수 × 이 값)
 SOURCE_COUNT_WEIGHT: float = 10.0

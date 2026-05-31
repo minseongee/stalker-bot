@@ -20,6 +20,8 @@ from server.database import (
 )
 from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
 
+from news.config import HOT_EMPHASIS_THRESHOLD
+
 SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
 
 _KST = datetime.timezone(datetime.timedelta(hours=9))
@@ -75,11 +77,21 @@ def _build_watchlist_embed(user_id: str) -> discord.Embed:
 
 
 def _build_hot_embed(news: dict) -> discord.Embed:
-    direction = news.get("direction", "neutral")
-    color = (discord.Color.red()   if direction == "positive" else
-             discord.Color.blue()  if direction == "negative" else
-             discord.Color.greyple())
-    title_emoji = "📈" if direction == "positive" else ("📉" if direction == "negative" else "📌")
+    direction  = news.get("direction", "neutral")
+    hot_score  = float(news.get("hot_score", 0))
+    emphasis   = hot_score >= HOT_EMPHASIS_THRESHOLD
+
+    if emphasis:
+        color = discord.Color.orange()
+    elif direction == "positive":
+        color = discord.Color.red()
+    elif direction == "negative":
+        color = discord.Color.blue()
+    else:
+        color = discord.Color.greyple()
+
+    dir_emoji = "📈" if direction == "positive" else ("📉" if direction == "negative" else "📌")
+    title_emoji = f"🔥{dir_emoji}" if emphasis else dir_emoji
 
     embed = discord.Embed(
         title=f"{title_emoji} {news['headline']}",
