@@ -4,9 +4,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable
 
+import os
+
 from .config import (
     HOT_KEYWORDS,
-    HOT_SCORE_THRESHOLD,
     SOURCE_COUNT_CAP,
     SOURCE_COUNT_WEIGHT,
     STOCK_PRICE_BONUS,
@@ -51,19 +52,32 @@ def _score_keywords(sig: ClusterSignal) -> float:
 
 
 def _score_dart(sig: ClusterSignal) -> float:
-    """DART 공시가 포함된 클러스터는 기본 30점 보너스."""
+    """DART 공시 포함 클러스터 — 중요 공시 키워드에 따라 차등 보너스."""
     if "DART" not in sig.sources:
         return 0.0
     combined = " ".join(sig.titles)
-    # 중요 공시 키워드별 추가 보너스
+    # 기본 15점 + 중요도에 따라 추가 보너스 (상향)
     dart_keywords = [
-        ("유상증자", 10.0), ("무상증자",  8.0), ("자기주식",  8.0),
-        ("합병",    12.0), ("분할",     10.0), ("영업양수", 10.0), ("영업양도", 10.0),
-        ("최대주주", 8.0), ("대표이사",  5.0), ("감사의견", 10.0),
-        ("상장폐지", 15.0), ("관리종목", 12.0), ("횡령",    15.0), ("배임",    15.0),
-        ("실적",     5.0), ("배당",      5.0),
+        ("상장폐지", 25.0),  # ↑ 15→25
+        ("영업정지", 22.0),  # 신규
+        ("관리종목", 20.0),  # ↑ 12→20
+        ("횡령",    22.0),  # ↑ 15→22
+        ("배임",    22.0),  # ↑ 15→22
+        ("합병",    20.0),  # ↑ 12→20
+        ("분할",    18.0),  # ↑ 10→18
+        ("유상증자", 18.0),  # ↑ 10→18
+        ("무상증자", 12.0),  # ↑  8→12
+        ("자기주식", 12.0),  # ↑  8→12
+        ("영업양수", 15.0),  # 유지
+        ("영업양도", 15.0),  # 유지
+        ("공개매수", 20.0),  # 신규
+        ("감사의견", 18.0),  # ↑ 10→18
+        ("최대주주", 12.0),  # ↑  8→12
+        ("대표이사",  5.0),  # 유지 (단순 변경)
+        ("실적",     8.0),  # ↑  5→8
+        ("배당",     6.0),  # ↑  5→6
     ]
-    bonus = 30.0
+    bonus = 15.0  # ↓ 30→15 (중요 키워드 없는 공시는 낮은 기본점수)
     seen: set[str] = set()
     for kw, w in dart_keywords:
         if kw not in seen and kw in combined:
@@ -93,4 +107,5 @@ def compute_hot_score(sig: ClusterSignal) -> float:
 
 
 def is_hot(score: float) -> bool:
-    return score >= HOT_SCORE_THRESHOLD
+    threshold = float(os.getenv("HOT_SCORE_THRESHOLD", "70"))
+    return score >= threshold

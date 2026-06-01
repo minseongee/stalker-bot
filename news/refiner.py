@@ -53,7 +53,7 @@ async def refine_cluster(cluster_id: str, items: list[dict]) -> dict | None:
     print(f"[Refiner] 완료 → {result.get('headline', '')}")
 
     sources = [
-        {"source": it["source"], "url": it["url"]}
+        {"source": it["source"], "url": it["url"], "title": it["title"]}
         for it in items
     ]
 

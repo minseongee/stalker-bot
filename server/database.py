@@ -76,6 +76,13 @@ CREATE TABLE IF NOT EXISTS news_clusters (
     is_hot       INTEGER NOT NULL DEFAULT 0,
     refined_at   INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS news_messages (
+    cluster_id   TEXT    NOT NULL,
+    channel_id   TEXT    NOT NULL,
+    message_id   INTEGER NOT NULL,
+    PRIMARY KEY (cluster_id, channel_id)
+);
 """
 
 
@@ -388,6 +395,18 @@ def get_hot_news(limit: int = 20) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def get_hot_news_by_score(threshold: float, limit: int = 20) -> list[dict]:
+    """현재 임계치 기준으로 hot_score >= threshold 인 뉴스 반환."""
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM news_items
+               WHERE hot_score >= ? AND summary IS NOT NULL
+               ORDER BY fetched_at DESC LIMIT ?""",
+            (threshold, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_latest_hot_news_time() -> int | None:
     with _conn() as conn:
         row = conn.execute(
@@ -432,6 +451,10 @@ def purge_old_news(days: int = 7) -> int:
             """DELETE FROM news_clusters WHERE cluster_id NOT IN (
                SELECT DISTINCT cluster_id FROM news_items WHERE cluster_id IS NOT NULL)"""
         )
+        conn.execute(
+            """DELETE FROM news_messages WHERE cluster_id NOT IN (
+               SELECT DISTINCT cluster_id FROM news_items WHERE cluster_id IS NOT NULL)"""
+        )
         deleted = conn.execute("SELECT changes()").fetchone()[0]
     return deleted
 
@@ -460,3 +483,24 @@ def get_cluster_items(cluster_id: str) -> list[dict]:
             (cluster_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ── news_messages ────────────────────────────────────────────────────────────
+
+def save_message_id(cluster_id: str, channel_id: str, message_id: int) -> None:
+    with _conn() as conn:
+        conn.execute(
+            """INSERT INTO news_messages (cluster_id, channel_id, message_id)
+               VALUES (?,?,?)
+               ON CONFLICT(cluster_id, channel_id) DO UPDATE SET message_id=excluded.message_id""",
+            (cluster_id, channel_id, message_id),
+        )
+
+
+def get_message_id(cluster_id: str, channel_id: str) -> int | None:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT message_id FROM news_messages WHERE cluster_id=? AND channel_id=?",
+            (cluster_id, channel_id),
+        ).fetchone()
+        return row["message_id"] if row else None

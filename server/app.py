@@ -16,7 +16,7 @@ from .database import (
     create_token,
     delete_channel,
     get_channels,
-    get_hot_news,
+    get_hot_news_by_score,
     get_recent_news_items,
     init_db,
     save_channel,
@@ -85,7 +85,8 @@ def dashboard_page():
 @app.get("/api/news")
 def news_dashboard(limit: int = Query(default=200, le=1000), hot_only: bool = False):
     if hot_only:
-        rows = get_hot_news(limit=limit)
+        threshold = float(os.getenv("HOT_SCORE_THRESHOLD", "70"))
+        rows = get_hot_news_by_score(threshold, limit=limit)
     else:
         rows = get_recent_news_items(limit=limit)
     import json as _json
@@ -212,7 +213,8 @@ def delete_channel_endpoint(req: ChannelDeleteRequest):
 @app.get("/news/hot")
 def hot_news(limit: int = Query(default=20, le=100)):
     """최근 정제된 핫뉴스 목록 조회."""
-    rows = get_hot_news(limit=limit)
+    threshold = float(os.getenv("HOT_SCORE_THRESHOLD", "70"))
+    rows = get_hot_news_by_score(threshold, limit=limit)
     result = []
     for r in rows:
         sources = json.loads(r["sources_json"]) if r.get("sources_json") else []

@@ -50,7 +50,7 @@ async def _refine_and_broadcast(hot_clusters: dict[str, float]) -> None:
             # 재클러스터링으로 새 기사가 편입된 경우 — GPT 재호출 없이 기존 요약 복사
             donor = has_summary[0]
             sources_json = json.dumps(
-                [{"source": i["source"], "url": i["url"]} for i in items_in_cluster],
+                [{"source": i["source"], "url": i["url"], "title": i["title"]} for i in items_in_cluster],
                 ensure_ascii=False,
             )
             for item in needs_summary:
@@ -63,7 +63,19 @@ async def _refine_and_broadcast(hot_clusters: dict[str, float]) -> None:
                     sources_json,
                 )
             print(f"[Pipeline] 클러스터 {cid[:8]}… 편입 기사 {len(needs_summary)}건 요약 복사")
+            fetched_at = max((i.get("fetched_at") or 0) for i in items_in_cluster)
             mark_cluster_refined(cid)
+            newly_refined.append({
+                "cluster_id": cid,
+                "fetched_at": fetched_at,
+                "hot_score":  hot_score,
+                "is_update":  True,
+                "headline":   donor["headline"],
+                "summary":    donor["summary"],
+                "direction":  donor["direction"],
+                "stock_tags": json.loads(donor.get("stock_tags") or "[]"),
+                "sources":    json.loads(sources_json),
+            })
             continue
 
         if has_summary:
@@ -128,13 +140,14 @@ async def _run_once() -> None:
     dart_str = f"DART {per_source.get('DART', 0)}건"
     print(f"[{kst}] [뉴스수집] 총 {len(new_items)}건 (신규 {len(inserted)}건) — {rss_str} | {dart_str}")
 
-    if not inserted:
+    # 2) 클러스터링 (최근 6시간 기사 전체 대상으로 재계산)
+    # 신규 기사 없어도 임계치 변경 등을 반영하기 위해 항상 재계산
+    since = int(time.time()) - 3600 * 6
+    recent = get_recent_news_items(limit=500, since=since)
+    if not recent:
         await _refine_and_broadcast({})
         return
 
-    # 2) 클러스터링 (최근 6시간 기사 전체 대상으로 재계산)
-    since = int(time.time()) - 3600 * 6
-    recent = get_recent_news_items(limit=500, since=since)
     clustered = assign_clusters(recent)
     cluster_meta = build_cluster_meta(clustered)
 

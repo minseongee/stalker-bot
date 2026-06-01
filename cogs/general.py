@@ -17,10 +17,10 @@ from utils.chart import fetch_chart, supported_codes
 from server.database import (
     get_watchlist, add_to_watchlist, remove_from_watchlist,
     set_news_channel, get_news_channels_by_type,
+    save_message_id, get_message_id,
 )
 from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
 
-from news.config import HOT_EMPHASIS_THRESHOLD
 
 SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
 
@@ -33,6 +33,7 @@ _NEWS_TIMES = [
 ]
 
 _last_broadcast_cluster_ids: set[str] = set()  # 중복 브로드캐스트 방지
+_sent_messages: dict[str, dict[str, int]] = {}  # cluster_id → {channel_id: message_id}
 _BROADCAST_ID_LIMIT = 1000  # 메모리 누수 방지 상한
 
 
@@ -79,7 +80,8 @@ def _build_watchlist_embed(user_id: str) -> discord.Embed:
 def _build_hot_embed(news: dict) -> discord.Embed:
     direction  = news.get("direction", "neutral")
     hot_score  = float(news.get("hot_score", 0))
-    emphasis   = hot_score >= HOT_EMPHASIS_THRESHOLD
+    emphasis_threshold = float(os.getenv("HOT_EMPHASIS_THRESHOLD", "60"))
+    emphasis   = hot_score >= emphasis_threshold
 
     if emphasis:
         color = discord.Color.orange()
@@ -104,10 +106,19 @@ def _build_hot_embed(news: dict) -> discord.Embed:
 
     sources = news.get("sources", [])
     if sources:
-        source_lines = "\n".join(
-            f"[{s['source']}]({s['url']})" for s in sources[:5]
-        )
-        embed.add_field(name="출처", value=source_lines, inline=False)
+        dart_srcs  = [s for s in sources if s.get("source") == "DART"]
+        other_srcs = [s for s in sources if s.get("source") != "DART"]
+        lines: list[str] = [f"[{s['source']}]({s['url']})" for s in other_srcs[:4]]
+        if dart_srcs:
+            first = dart_srcs[0]
+            raw   = first.get("title", "")
+            corp  = raw[1:raw.index("]")] if raw.startswith("[") and "]" in raw else "DART"
+            label = f"DART·{corp}"
+            if len(dart_srcs) == 1:
+                lines.append(f"[{label}]({first['url']})")
+            else:
+                lines.append(f"[{label}]({first['url']}) 외 {len(dart_srcs)-1}건")
+        embed.add_field(name="출처", value="\n".join(lines), inline=False)
 
     ft = news.get('fetched_at')
     if ft:
@@ -454,17 +465,12 @@ class General(commands.Cog):
         asyncio.create_task(self._broadcast_hot_news(refined_list))
 
     async def _broadcast_hot_news(self, refined_list: list[dict]) -> None:
-        global _last_broadcast_cluster_ids
+        global _last_broadcast_cluster_ids, _sent_messages
         for news in refined_list:
-            cid = news.get("cluster_id", "")
-            if cid in _last_broadcast_cluster_ids:
-                continue
-            _last_broadcast_cluster_ids.add(cid)
-            if len(_last_broadcast_cluster_ids) > _BROADCAST_ID_LIMIT:
-                oldest = next(iter(_last_broadcast_cluster_ids))
-                _last_broadcast_cluster_ids.discard(oldest)
+            cid       = news.get("cluster_id", "")
+            is_update = news.get("is_update", False)
 
-            is_dart = any(s.get("source") == "DART" for s in news.get("sources", []))
+            is_dart  = any(s.get("source") == "DART" for s in news.get("sources", []))
             channels = get_news_channels_by_type("dart") if is_dart else []
             if not channels:
                 if is_dart:
@@ -476,12 +482,41 @@ class General(commands.Cog):
             ch_type = "dart" if is_dart else "hot"
 
             embed = _build_hot_embed(news)
+
+            if is_update:
+                # 편입 기사 — 기존 메시지 수정
+                for row in channels:
+                    ch = self.bot.get_channel(int(row["channel_id"]))
+                    if ch is None:
+                        continue
+                    msg_id = (_sent_messages.get(cid, {}).get(str(row["channel_id"]))
+                              or get_message_id(cid, str(row["channel_id"])))
+                    if msg_id is None:
+                        continue  # 저장된 메시지 ID 없으면 skip
+                    try:
+                        msg = await ch.fetch_message(msg_id)
+                        await msg.edit(embed=embed)
+                        print(f"[{ch_type.upper()}] 채널 {row['channel_id']} 편입 업데이트: {news['headline']}")
+                    except Exception as e:
+                        print(f"[{ch_type.upper()}] 채널 {row['channel_id']} 편입 업데이트 실패: {e}")
+                continue
+
+            # 신규 핫뉴스
+            if cid in _last_broadcast_cluster_ids:
+                continue
+            _last_broadcast_cluster_ids.add(cid)
+            if len(_last_broadcast_cluster_ids) > _BROADCAST_ID_LIMIT:
+                oldest = next(iter(_last_broadcast_cluster_ids))
+                _last_broadcast_cluster_ids.discard(oldest)
+
             for row in channels:
                 ch = self.bot.get_channel(int(row["channel_id"]))
                 if ch is None:
                     continue
                 try:
-                    await ch.send(embed=embed)
+                    msg = await ch.send(embed=embed)
+                    _sent_messages.setdefault(cid, {})[str(row["channel_id"])] = msg.id
+                    save_message_id(cid, str(row["channel_id"]), msg.id)
                     print(f"[{ch_type.upper()}] 채널 {row['channel_id']} 전송: {news['headline']}")
                 except Exception as e:
                     print(f"[{ch_type.upper()}] 채널 {row['channel_id']} 전송 실패: {e}")

@@ -7,7 +7,7 @@ from xml.etree import ElementTree as ET
 
 import aiohttp
 
-from .config import DART_API_KEY, DART_ENDPOINT, RSS_FEEDS
+from .config import DART_API_KEY, DART_ENDPOINT, DART_EXCLUDE_REPORTS, RSS_FEEDS
 
 _HEADERS = {"User-Agent": "StalkerBot/1.0 (news collector)"}
 _TIMEOUT = aiohttp.ClientTimeout(total=10)
@@ -108,6 +108,8 @@ async def _fetch_dart(session: aiohttp.ClientSession) -> list[dict]:
         rcpno = d.get("rcept_no", "")
         date  = d.get("rcept_dt", "")
         if not rcpno:
+            continue
+        if any(kw in title for kw in DART_EXCLUDE_REPORTS):
             continue
         url = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcpno}"
         pub = int(time.mktime(time.strptime(date, "%Y%m%d"))) if date else int(time.time())

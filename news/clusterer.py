@@ -12,6 +12,7 @@ _STOP = frozenset([
 
 
 def _normalize(title: str) -> set[str]:
+    title = re.sub(r"(\d),(\d)", r"\1\2", title)  # 8,800 → 8800
     title = re.sub(r"[^\w\s]", " ", title)
     tokens = title.split()
     return {t for t in tokens if len(t) > 1 and t not in _STOP}
