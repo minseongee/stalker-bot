@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>차트 수정 — Stalker Bot</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#0f1117; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; min-height:100vh; }
+    header { display:flex; align-items:center; gap:12px; padding:14px 24px; background:#1a1d27; border-bottom:1px solid #2a2d3a; }
+    .back-btn { color:#7dd3fc; text-decoration:none; font-size:0.85rem; }
+    .back-btn:hover { text-decoration:underline; }
+    h1 { font-size:1rem; font-weight:600; color:#fff; }
+    main { max-width:720px; margin:32px auto; padding:0 24px; }
+
+    .search-wrap { margin-bottom:16px; }
+    .search-input {
+      width:100%; background:#16213e; border:1px solid #1e3a5f;
+      border-radius:10px; color:#e0e0e0; padding:10px 16px;
+      font-size:0.9rem; outline:none;
+    }
+    .search-input:focus { border-color:#7dd3fc; }
+
+    .list { background:#16213e; border:1px solid #1e3a5f; border-radius:12px; overflow:hidden; }
+    .list-item {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:13px 18px; border-bottom:1px solid #1a1d28;
+      transition:background .15s;
+    }
+    .list-item:last-child { border-bottom:none; }
+    .list-item:hover { background:#1a2a40; }
+
+    .item-left { display:flex; align-items:center; gap:12px; }
+    .wl-star { color:#fbbf24; font-size:0.9rem; width:16px; text-align:center; }
+    .item-name { font-size:0.9rem; font-weight:600; color:#fff; }
+    .item-code { font-size:0.75rem; color:#555; font-family:monospace; margin-top:1px; }
+
+    .item-right { display:flex; align-items:center; gap:8px; }
+    .channel-badge {
+      font-size:0.7rem; font-weight:700; padding:2px 7px;
+      border-radius:4px; background:#1e3a5f; color:#7dd3fc;
+    }
+    .edit-btn {
+      padding:6px 14px; background:#1e3a5f; border:1px solid #7dd3fc;
+      color:#7dd3fc; border-radius:7px; font-size:0.8rem; font-weight:600;
+      cursor:pointer; transition:background .15s; white-space:nowrap;
+    }
+    .edit-btn:hover { background:#2a4d7f; }
+    .edit-btn:disabled { opacity:0.5; cursor:not-allowed; }
+
+    .section-header {
+      padding:8px 18px; background:#0f1117;
+      font-size:0.7rem; font-weight:700; color:#555;
+      text-transform:uppercase; letter-spacing:.5px;
+      border-bottom:1px solid #1a1d28;
+    }
+    .empty { text-align:center; padding:48px; color:#555; }
+    .loading { text-align:center; padding:48px; color:#555; }
+  </style>
+</head>
+<body>
+<header>
+  <a href="/dashboard" class="back-btn">← 대시보드</a>
+  <h1>✏️ 차트 수정</h1>
+</header>
+<main>
+  <div class="search-wrap">
+    <input class="search-input" id="search" placeholder="종목명 또는 코드 검색…" oninput="render()">
+  </div>
+  <div id="list-wrap"><div class="loading">불러오는 중…</div></div>
+</main>
+<script>
+let stocks = [];
+
+async function load() {
+  const res = await fetch('/api/me/stocks-all');
+  if (!res.ok) { location.href = '/login'; return; }
+  stocks = await res.json();
+  render();
+}
+
+function render() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const filtered = q
+    ? stocks.filter(s => s.name.toLowerCase().includes(q) || s.code.includes(q))
+    : stocks;
+
+  if (!filtered.length) {
+    document.getElementById('list-wrap').innerHTML = '<div class="list"><div class="empty">검색 결과가 없습니다.</div></div>';
+    return;
+  }
+
+  const wl = filtered.filter(s => s.in_watchlist);
+  const rest = filtered.filter(s => !s.in_watchlist);
+
+  let html = '<div class="list">';
+  if (wl.length && !q) html += `<div class="section-header">⭐ 관심 종목</div>${wl.map(row).join('')}`;
+  if (wl.length && !q && rest.length) html += `<div class="section-header">전체 종목</div>`;
+  html += rest.map(row).join('');
+  if (q) html = '<div class="list">' + filtered.map(row).join('');
+  html += '</div>';
+
+  document.getElementById('list-wrap').innerHTML = html;
+}
+
+function row(s) {
+  const channelBadge = s.has_channel ? '<span class="channel-badge">채널 있음</span>' : '';
+  return `<div class="list-item">
+    <div class="item-left">
+      <span class="wl-star">${s.in_watchlist ? '⭐' : ''}</span>
+      <div>
+        <div class="item-name">${s.name}</div>
+        <div class="item-code">${s.code}</div>
+      </div>
+    </div>
+    <div class="item-right">
+      ${channelBadge}
+      <button class="edit-btn" onclick="openEditor('${s.code}', '${s.name}', this)">✏️ 차트수정</button>
+    </div>
+  </div>`;
+}
+
+async function openEditor(code, name, btn) {
+  btn.disabled = true;
+  btn.textContent = '로딩 중…';
+  try {
+    const res = await fetch(`/api/me/editor-token?code=${code}`);
+    const data = await res.json();
+    window.open(data.editor_url, '_blank');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✏️ 차트수정';
+  }
+}
+
+load();
+</script>
+</body>
+</html>

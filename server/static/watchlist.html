@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>관심 종목 — Stalker Bot</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#0f1117; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; min-height:100vh; }
+    header { display:flex; align-items:center; gap:12px; padding:14px 24px; background:#1a1d27; border-bottom:1px solid #2a2d3a; }
+    .back-btn { color:#7dd3fc; text-decoration:none; font-size:0.85rem; }
+    .back-btn:hover { text-decoration:underline; }
+    h1 { font-size:1rem; font-weight:600; color:#fff; }
+    main { max-width:720px; margin:32px auto; padding:0 24px; }
+    .search-wrap { margin-bottom:16px; }
+    .search-input {
+      width:100%; background:#16213e; border:1px solid #1e3a5f;
+      border-radius:10px; color:#e0e0e0; padding:10px 16px;
+      font-size:0.9rem; outline:none;
+    }
+    .search-input:focus { border-color:#7dd3fc; }
+    .list { background:#16213e; border:1px solid #1e3a5f; border-radius:12px; overflow:hidden; }
+    .list-item {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:13px 18px; border-bottom:1px solid #1a1d28; transition:background .15s;
+    }
+    .list-item:last-child { border-bottom:none; }
+    .list-item:hover { background:#1a2a40; }
+    .item-left { display:flex; align-items:center; gap:12px; }
+    .wl-star { font-size:0.9rem; width:16px; text-align:center; }
+    .item-name { font-size:0.9rem; font-weight:600; color:#fff; }
+    .item-code { font-size:0.75rem; color:#555; font-family:monospace; margin-top:1px; }
+    .section-header {
+      padding:8px 18px; background:#0f1117;
+      font-size:0.7rem; font-weight:700; color:#555;
+      text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid #1a1d28;
+    }
+    .toggle-btn {
+      padding:6px 14px; border-radius:7px; font-size:0.8rem; font-weight:600;
+      cursor:pointer; transition:all .15s; white-space:nowrap; border:1px solid;
+    }
+    .toggle-btn.on  { background:#78350f; border-color:#fbbf24; color:#fbbf24; }
+    .toggle-btn.on:hover  { background:#92400e; }
+    .toggle-btn.off { background:#1e3a5f; border-color:#7dd3fc; color:#7dd3fc; }
+    .toggle-btn.off:hover { background:#2a4d7f; }
+    .toggle-btn:disabled { opacity:0.5; cursor:not-allowed; }
+    .loading { text-align:center; padding:48px; color:#555; }
+    .empty { text-align:center; padding:48px; color:#555; }
+  </style>
+</head>
+<body>
+<header>
+  <a href="/dashboard" class="back-btn">← 대시보드</a>
+  <h1>⭐ 관심 종목</h1>
+</header>
+<main>
+  <div class="search-wrap">
+    <input class="search-input" id="search" placeholder="종목명 또는 코드 검색…" oninput="render()">
+  </div>
+  <div id="list-wrap"><div class="loading">불러오는 중…</div></div>
+</main>
+<script>
+let stocks = [];
+
+async function load() {
+  const res = await fetch('/api/me/stocks-all');
+  if (!res.ok) { location.href = '/login'; return; }
+  stocks = await res.json();
+  render();
+}
+
+function render() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const filtered = q ? stocks.filter(s => s.name.toLowerCase().includes(q) || s.code.includes(q)) : stocks;
+  if (!filtered.length) {
+    document.getElementById('list-wrap').innerHTML = '<div class="list"><div class="empty">검색 결과가 없습니다.</div></div>';
+    return;
+  }
+  const wl   = filtered.filter(s => s.in_watchlist);
+  const rest = filtered.filter(s => !s.in_watchlist);
+  let html = '<div class="list">';
+  if (wl.length && !q) html += `<div class="section-header">⭐ 관심 종목 (${wl.length})</div>${wl.map(row).join('')}`;
+  if (!q && wl.length && rest.length) html += `<div class="section-header">전체 종목</div>`;
+  const listItems = q ? filtered : rest;
+  html += listItems.map(row).join('') + '</div>';
+  document.getElementById('list-wrap').innerHTML = html;
+}
+
+function row(s) {
+  const on = s.in_watchlist;
+  return `<div class="list-item" id="item-${s.code}">
+    <div class="item-left">
+      <span class="wl-star">${on ? '⭐' : ''}</span>
+      <div>
+        <div class="item-name">${s.name}</div>
+        <div class="item-code">${s.code}</div>
+      </div>
+    </div>
+    <button class="toggle-btn ${on ? 'on' : 'off'}" onclick="toggle('${s.code}', this)">
+      ${on ? '★ 제거' : '⭐ 추가'}
+    </button>
+  </div>`;
+}
+
+async function toggle(code, btn) {
+  btn.disabled = true;
+  const isOn = btn.classList.contains('on');
+  const method = isOn ? 'DELETE' : 'POST';
+  await fetch(`/api/me/watchlist/${code}`, { method });
+  // 로컬 상태 업데이트
+  const s = stocks.find(s => s.code === code);
+  if (s) s.in_watchlist = !isOn;
+  render();
+}
+
+load();
+</script>
+</body>
+</html>

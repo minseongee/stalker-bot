@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>봇 설정 — Stalker Bot</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#0f1117; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; min-height:100vh; }
+    header { display:flex; align-items:center; padding:14px 24px; gap:12px; background:#1a1d27; border-bottom:1px solid #2a2d3a; }
+    .back-btn { color:#7dd3fc; text-decoration:none; font-size:0.85rem; }
+    .back-btn:hover { text-decoration:underline; }
+    h1 { font-size:1rem; font-weight:600; color:#fff; }
+    main { max-width:600px; margin:40px auto; padding:0 24px; }
+    .section { background:#16213e; border:1px solid #1e3a5f; border-radius:12px; padding:24px; margin-bottom:20px; }
+    .section-title { font-size:0.85rem; font-weight:700; color:#7dd3fc; text-transform:uppercase; letter-spacing:.5px; margin-bottom:20px; }
+    .field { margin-bottom:20px; }
+    .field:last-child { margin-bottom:0; }
+    .field label { display:block; font-size:0.85rem; color:#ccc; margin-bottom:6px; }
+    .field .desc { font-size:0.75rem; color:#555; margin-bottom:8px; }
+    .field-row { display:flex; align-items:center; gap:10px; }
+    input[type=number] {
+      background:#0f1117; border:1px solid #2a2d3a; border-radius:8px;
+      color:#e0e0e0; padding:8px 12px; font-size:0.9rem; width:120px; outline:none;
+    }
+    input[type=number]:focus { border-color:#7dd3fc; }
+    .unit { font-size:0.8rem; color:#555; }
+    .save-btn {
+      background:#1e3a5f; border:1px solid #7dd3fc; color:#7dd3fc;
+      border-radius:8px; padding:10px 24px; font-size:0.9rem; cursor:pointer;
+      width:100%; margin-top:24px; transition:background .2s;
+    }
+    .save-btn:hover { background:#2a4d7f; }
+    .toast {
+      position:fixed; bottom:24px; right:24px;
+      background:#14532d; color:#4ade80; border:1px solid #4ade80;
+      border-radius:8px; padding:10px 18px; font-size:0.85rem;
+      display:none; animation:fadeIn .2s;
+    }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+  </style>
+</head>
+<body>
+<header>
+  <a href="/administrator" class="back-btn">← 대시보드</a>
+  <h1>⚙️ 봇 설정</h1>
+</header>
+<main>
+  <div class="section">
+    <div class="section-title">핫뉴스 설정</div>
+    <div class="field">
+      <label>핫뉴스 판정 임계값</label>
+      <div class="desc">이 점수 이상이면 핫뉴스로 분류됩니다. (0~100)</div>
+      <div class="field-row">
+        <input type="number" id="HOT_SCORE_THRESHOLD" min="0" max="100" step="1">
+        <span class="unit">점</span>
+      </div>
+    </div>
+    <div class="field">
+      <label>채팅 강조 임계값</label>
+      <div class="desc">이 점수 이상이면 Discord 채팅에서 강조 표시됩니다. (0~100)</div>
+      <div class="field-row">
+        <input type="number" id="HOT_EMPHASIS_THRESHOLD" min="0" max="100" step="1">
+        <span class="unit">점</span>
+      </div>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-title">수집 설정</div>
+    <div class="field">
+      <label>뉴스 폴링 주기</label>
+      <div class="desc">RSS/DART 뉴스를 가져오는 주기입니다.</div>
+      <div class="field-row">
+        <input type="number" id="NEWS_POLL_INTERVAL" min="10" max="3600" step="10">
+        <span class="unit">초</span>
+      </div>
+    </div>
+  </div>
+  <button class="save-btn" onclick="save()">저장</button>
+  <div class="section" style="margin-top:20px">
+    <div class="section-title">수동 실행</div>
+    <div class="field">
+      <label>브리핑 강제 실행</label>
+      <div class="desc">즉시 시장 브리핑을 생성해 브리핑 채널로 전송합니다. (최대 30초 후 실행)</div>
+      <button class="save-btn" id="briefing-btn" onclick="triggerBriefing()" style="margin-top:8px; background:#1a2a40; border-color:#f97316; color:#f97316;">
+        📰 브리핑 강제 실행
+      </button>
+    </div>
+  </div>
+</main>
+<div class="toast" id="toast">✓ 설정이 저장되었습니다</div>
+<script>
+async function load() {
+  const res = await fetch('/api/admin/settings');
+  const s = await res.json();
+  document.getElementById('HOT_SCORE_THRESHOLD').value = s.HOT_SCORE_THRESHOLD;
+  document.getElementById('HOT_EMPHASIS_THRESHOLD').value = s.HOT_EMPHASIS_THRESHOLD;
+  document.getElementById('NEWS_POLL_INTERVAL').value = s.NEWS_POLL_INTERVAL;
+}
+
+async function triggerBriefing() {
+  const btn = document.getElementById('briefing-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 요청 중…';
+  await fetch('/api/admin/trigger-briefing', { method: 'POST' });
+  btn.textContent = '✓ 요청 완료 (30초 내 실행)';
+  setTimeout(() => {
+    btn.disabled = false;
+    btn.textContent = '📰 브리핑 강제 실행';
+  }, 35000);
+}
+
+async function save() {
+  const body = {
+    HOT_SCORE_THRESHOLD:   document.getElementById('HOT_SCORE_THRESHOLD').value,
+    HOT_EMPHASIS_THRESHOLD: document.getElementById('HOT_EMPHASIS_THRESHOLD').value,
+    NEWS_POLL_INTERVAL:    document.getElementById('NEWS_POLL_INTERVAL').value,
+  };
+  await fetch('/api/admin/settings', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+  const toast = document.getElementById('toast');
+  toast.style.display = 'block';
+  setTimeout(()=>toast.style.display='none', 2500);
+}
+
+load();
+</script>
+</body>
+</html>

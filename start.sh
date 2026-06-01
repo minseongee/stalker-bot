@@ -14,6 +14,16 @@ echo "[서버] FastAPI 시작 중... (http://localhost:8000)"
 python3 -m uvicorn server.app:app --host 0.0.0.0 --port 8000 &
 SERVER_PID=$!
 
+# 어떤 방식으로 종료되든 서버를 같이 종료
+cleanup() {
+    echo ""
+    echo "[종료] 서버를 종료합니다... (PID $SERVER_PID)"
+    kill $SERVER_PID 2>/dev/null
+    wait $SERVER_PID 2>/dev/null
+    exit 0
+}
+trap cleanup EXIT INT TERM
+
 # 서버가 실제로 응답할 때까지 대기 (최대 10초)
 for i in $(seq 1 10); do
     if curl -s http://localhost:8000/docs > /dev/null 2>&1; then
@@ -30,8 +40,3 @@ echo ""
 # Discord 봇을 포그라운드에서 실행
 echo "[봇] Discord 봇 시작 중..."
 python3 main.py
-
-# 봇이 종료되면 서버도 함께 종료
-echo ""
-echo "[종료] 서버를 종료합니다..."
-kill $SERVER_PID 2>/dev/null

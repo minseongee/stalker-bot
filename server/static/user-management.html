@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>사용자 관리 — Stalker Bot</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#0f1117; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; min-height:100vh; }
+    header { display:flex; align-items:center; justify-content:space-between; padding:14px 24px; background:#1a1d27; border-bottom:1px solid #2a2d3a; }
+    .header-left { display:flex; align-items:center; gap:12px; }
+    .back-btn { color:#7dd3fc; text-decoration:none; font-size:0.85rem; }
+    .back-btn:hover { text-decoration:underline; }
+    h1 { font-size:1rem; font-weight:600; color:#fff; }
+    main { max-width:1000px; margin:32px auto; padding:0 24px; }
+    .summary-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:28px; }
+    .scard { background:#16213e; border:1px solid #1e3a5f; border-radius:10px; padding:16px 20px; }
+    .scard-label { font-size:0.75rem; color:#666; margin-bottom:4px; }
+    .scard-value { font-size:1.6rem; font-weight:700; color:#7dd3fc; }
+    table { width:100%; border-collapse:collapse; background:#16213e; border:1px solid #1e3a5f; border-radius:10px; overflow:hidden; }
+    thead th { background:#1a1d27; padding:10px 14px; text-align:left; font-size:0.75rem; color:#666; text-transform:uppercase; letter-spacing:.4px; border-bottom:1px solid #2a2d3a; }
+    tbody tr { border-bottom:1px solid #1a1d28; cursor:pointer; transition:background .15s; }
+    tbody tr:hover { background:#1a2a40; }
+    tbody tr:last-child { border-bottom:none; }
+    td { padding:10px 14px; font-size:0.85rem; }
+    .uid { font-family:monospace; font-size:0.8rem; color:#aaa; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:600; }
+    .badge-on { background:#14532d; color:#4ade80; }
+    .badge-off { background:#1c1917; color:#78716c; }
+
+    /* 상세 패널 */
+    .detail-panel { margin-top:28px; background:#16213e; border:1px solid #1e3a5f; border-radius:10px; padding:20px; display:none; }
+    .detail-panel.open { display:block; }
+    .detail-title { font-size:0.9rem; font-weight:600; color:#fff; margin-bottom:14px; }
+    .channel-grid { display:grid; gap:8px; }
+    .channel-card { background:#0f1117; border:1px solid #2a2d3a; border-radius:8px; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; }
+    .channel-code { font-weight:700; color:#7dd3fc; font-size:0.9rem; }
+    .channel-meta { font-size:0.75rem; color:#666; }
+    .channel-type { background:#1e3a5f; color:#7dd3fc; padding:2px 6px; border-radius:4px; font-size:0.7rem; }
+    .empty { text-align:center; padding:40px; color:#555; }
+    .loading { text-align:center; padding:40px; color:#555; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="header-left">
+    <a href="/administrator" class="back-btn">← 대시보드</a>
+    <h1>👥 사용자 관리</h1>
+  </div>
+</header>
+<main>
+  <div class="summary-cards">
+    <div class="scard"><div class="scard-label">총 사용자</div><div class="scard-value" id="total-users">-</div></div>
+    <div class="scard"><div class="scard-label">총 채널</div><div class="scard-value" id="total-channels">-</div></div>
+    <div class="scard"><div class="scard-label">알림 활성 채널</div><div class="scard-value" id="alert-channels">-</div></div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Discord ID</th>
+        <th>채널 수</th>
+        <th>알림 ON</th>
+        <th>마지막 활동</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"><tr><td colspan="4" class="loading">불러오는 중…</td></tr></tbody>
+  </table>
+  <div class="detail-panel" id="detail-panel">
+    <div class="detail-title" id="detail-title"></div>
+    <div class="channel-grid" id="channel-grid"></div>
+  </div>
+</main>
+<script>
+const fmt = ts => ts ? new Date(ts*1000).toLocaleString('ko-KR') : '-';
+let selectedId = null;
+
+async function load() {
+  const res = await fetch('/api/admin/users');
+  const users = await res.json();
+  document.getElementById('total-users').textContent = users.length;
+  const totalCh = users.reduce((s,u)=>s+u.channel_count,0);
+  const alertCh = users.reduce((s,u)=>s+u.alert_on_count,0);
+  document.getElementById('total-channels').textContent = totalCh;
+  document.getElementById('alert-channels').textContent = alertCh;
+
+  const tbody = document.getElementById('tbody');
+  if (!users.length) { tbody.innerHTML='<tr><td colspan="4" class="empty">등록된 사용자 없음</td></tr>'; return; }
+
+  // 일단 ID로 렌더 후, 유저명 비동기 조회
+  tbody.innerHTML = users.map(u=>`
+    <tr onclick="loadDetail('${u.user_id}')">
+      <td><span class="uid" id="name-${u.user_id}">${u.user_id}</span></td>
+      <td>${u.channel_count}</td>
+      <td><span class="badge ${u.alert_on_count>0?'badge-on':'badge-off'}">${u.alert_on_count} / ${u.channel_count}</span></td>
+      <td>${fmt(u.last_seen)}</td>
+    </tr>`).join('');
+
+  // 유저명 병렬 조회
+  await Promise.all(users.map(async u => {
+    try {
+      const r = await fetch(`/api/admin/discord-lookup/${u.user_id}`);
+      const p = await r.json();
+      const el = document.getElementById(`name-${u.user_id}`);
+      if (el) el.textContent = p.global_name;
+    } catch(e) {}
+  }));
+}
+
+async function loadDetail(userId) {
+  if (selectedId === userId) {
+    document.getElementById('detail-panel').classList.remove('open');
+    selectedId = null; return;
+  }
+  selectedId = userId;
+  const panel = document.getElementById('detail-panel');
+  panel.classList.add('open');
+  document.getElementById('detail-title').textContent = `📋 ${userId} 의 채널 목록`;
+  document.getElementById('channel-grid').innerHTML = '<div class="loading">불러오는 중…</div>';
+
+  const res = await fetch(`/api/admin/users/${userId}`);
+  const channels = await res.json();
+  if (!channels.length) {
+    document.getElementById('channel-grid').innerHTML = '<div class="empty">채널 없음</div>'; return;
+  }
+  document.getElementById('channel-grid').innerHTML = channels.map(c=>`
+    <div class="channel-card">
+      <div>
+        <span class="channel-code">${c.stock_code}</span>
+        <span class="channel-type">${c.channel_type}</span>
+      </div>
+      <div style="text-align:right">
+        <div class="channel-meta">알림: ${c.alert_enabled?'ON':'OFF'} · 발동 ${c.fired_count}회</div>
+        <div class="channel-meta">${fmt(c.created_at)}</div>
+      </div>
+    </div>`).join('');
+}
+
+load();
+</script>
+</body>
+</html>

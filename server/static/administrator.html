@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stalker Bot — 대시보드</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0f1117;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 28px;
+      background: #1a1d27;
+      border-bottom: 1px solid #2a2d3a;
+    }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .header-left h1 { font-size: 1rem; font-weight: 600; color: #fff; }
+    .logo { font-size: 1.2rem; }
+
+    .user-info { display: flex; align-items: center; gap: 10px; }
+    .avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: #2a2d3a; object-fit: cover;
+    }
+    .username { font-size: 0.85rem; color: #aaa; }
+    .logout-btn {
+      font-size: 0.8rem; color: #666;
+      background: none; border: 1px solid #2a2d3a;
+      border-radius: 6px; padding: 4px 10px; cursor: pointer;
+      text-decoration: none;
+    }
+    .logout-btn:hover { color: #aaa; border-color: #444; }
+
+    main {
+      max-width: 960px;
+      margin: 48px auto;
+      padding: 0 24px;
+    }
+    .greeting {
+      margin-bottom: 32px;
+    }
+    .greeting h2 { font-size: 1.4rem; font-weight: 600; color: #fff; margin-bottom: 4px; }
+    .greeting p  { font-size: 0.9rem; color: #666; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: #16213e;
+      border: 1px solid #1e3a5f;
+      border-radius: 14px;
+      padding: 24px;
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+      cursor: pointer;
+    }
+    .card:hover {
+      border-color: #7dd3fc;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+    }
+    .card-icon { font-size: 1.8rem; }
+    .card-title { font-size: 1rem; font-weight: 600; color: #fff; }
+    .card-desc  { font-size: 0.82rem; color: #666; line-height: 1.5; }
+    .card-badge {
+      display: inline-block;
+      font-size: 0.7rem; font-weight: 700;
+      padding: 2px 8px; border-radius: 20px;
+      width: fit-content;
+    }
+    .badge-live  { background: #14532d; color: #4ade80; }
+    .badge-admin { background: #1e1b4b; color: #818cf8; }
+    .badge-soon  { background: #1c1917; color: #78716c; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <span class="logo">📈</span>
+    <h1>Stalker Bot</h1>
+  </div>
+  <div class="user-info">
+    <img id="avatar" class="avatar" src="" alt="">
+    <span id="username" class="username"></span>
+    <a href="/auth/logout" class="logout-btn">로그아웃</a>
+  </div>
+</header>
+
+<main>
+  <div class="greeting">
+    <h2 id="greeting-text">안녕하세요!</h2>
+    <p>관리할 항목을 선택하세요.</p>
+  </div>
+
+  <div class="grid">
+    <a href="/dashboard" class="card">
+      <div class="card-icon">👤</div>
+      <div class="card-title">유저 대시보드</div>
+      <div class="card-desc">차트 수정 등 일반 유저 기능을 사용합니다.</div>
+      <span class="card-badge badge-live">LIVE</span>
+    </a>
+
+    <a href="/news-list" class="card">
+      <div class="card-icon">📰</div>
+      <div class="card-title">뉴스 목록</div>
+      <div class="card-desc">수집된 뉴스 기사 및 핫뉴스 현황을 확인합니다.</div>
+      <span class="card-badge badge-live">LIVE</span>
+    </a>
+
+    <a href="/user-management" class="card">
+      <div class="card-icon">👥</div>
+      <div class="card-title">사용자 관리</div>
+      <div class="card-desc">Discord 유저별 채널 및 알림 설정을 관리합니다.</div>
+      <span class="card-badge badge-live">LIVE</span>
+    </a>
+
+    <a href="/bot-settings" class="card">
+      <div class="card-icon">⚙️</div>
+      <div class="card-title">봇 설정</div>
+      <div class="card-desc">핫뉴스 임계값, 폴링 주기 등 봇 설정을 변경합니다.</div>
+      <span class="card-badge badge-live">LIVE</span>
+    </a>
+
+    <a href="/stats" class="card">
+      <div class="card-icon">📊</div>
+      <div class="card-title">통계</div>
+      <div class="card-desc">뉴스 수집량, 알림 발송 현황 등 통계를 확인합니다.</div>
+      <span class="card-badge badge-live">LIVE</span>
+    </a>
+  </div>
+</main>
+
+<script>
+  async function loadUser() {
+    try {
+      const res = await fetch('/api/me');
+      if (!res.ok) { location.href = '/login'; return; }
+      const user = await res.json();
+      document.getElementById('greeting-text').textContent = `안녕하세요, ${user.global_name}님!`;
+      document.getElementById('username').textContent = user.global_name;
+      if (user.avatar) {
+        document.getElementById('avatar').src =
+          `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=64`;
+      } else {
+        document.getElementById('avatar').src =
+          `https://cdn.discordapp.com/embed/avatars/${parseInt(user.id) % 5}.png`;
+      }
+    } catch(e) { location.href = '/login'; }
+  }
+  loadUser();
+</script>
+</body>
+</html>

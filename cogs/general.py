@@ -19,11 +19,13 @@ from server.database import (
     get_watchlist, add_to_watchlist, remove_from_watchlist,
     set_news_channel, get_news_channels_by_type,
     save_message_id, get_message_id, get_broadcast_cluster_ids,
+    get_live_setting, set_setting,
 )
 from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
 
 
-SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
+SERVER_URL    = os.getenv("SERVER_URL", "http://localhost:8000")
+DASHBOARD_URL = os.getenv("EDITOR_BASE_URL", SERVER_URL)
 
 _NEWS_TIMES = [
     datetime.time(hour=8,  tzinfo=_KST),
@@ -222,36 +224,12 @@ class ChartResultView(discord.ui.View):
         await interaction.followup.send(msg, ephemeral=True)
 
     async def _edit_chart(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True, thinking=True)
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{SERVER_URL}/token",
-                    json={"user_id": str(interaction.user.id), "stock_code": self.stock_code},
-                    timeout=aiohttp.ClientTimeout(total=5),
-                ) as resp:
-                    if resp.status != 200:
-                        raise RuntimeError(f"서버 오류 {resp.status}")
-                    data = await resp.json()
-        except Exception as e:
-            await interaction.followup.send(f"⚠️ 에디터 링크 생성 실패\n```{e}```", ephemeral=True)
-            return
-
-        expires_min = data["expires_in"] // 60
-        try:
-            await interaction.user.send(
-                f"✏️ **{self.stock_code} 채널 에디터**\n\n"
-                f"아래 링크에서 추세 채널을 그리고 저장하세요.\n"
-                f"링크는 **{expires_min}분** 후 만료됩니다.\n\n"
-                f"{data['editor_url']}"
-            )
-            await interaction.followup.send("✅ DM으로 에디터 링크를 보냈습니다!", ephemeral=True)
-        except discord.Forbidden:
-            await interaction.followup.send(
-                f"✏️ **{self.stock_code} 채널 에디터** (DM 차단)\n\n"
-                f"{data['editor_url']}\n⏱️ {expires_min}분 후 만료",
-                ephemeral=True,
-            )
+        await interaction.response.send_message(
+            f"✏️ **{self.stock_code} 차트 수정**\n\n"
+            f"아래 대시보드에서 로그인 후 차트를 수정하세요.\n"
+            f"{DASHBOARD_URL}/dashboard",
+            ephemeral=True,
+        )
 
 
 # ── 관심 종목 추가 View (Select Menu) ─────────────────────────────────────────
@@ -423,9 +401,11 @@ class General(commands.Cog):
         register_hot_callback(self._on_hot_news)
         print(f"[뉴스] hot news 콜백 등록 완료 (기존 broadcast {len(_last_broadcast_cluster_ids)}건 로드)")
         self.daily_briefing.start()
+        self.force_briefing_check.start()
 
     def cog_unload(self):
         self.daily_briefing.cancel()
+        self.force_briefing_check.cancel()
 
     @tasks.loop(time=_NEWS_TIMES)
     async def daily_briefing(self):
@@ -460,6 +440,44 @@ class General(commands.Cog):
 
     @daily_briefing.before_loop
     async def before_daily_briefing(self):
+        await self.bot.wait_until_ready()
+
+    @tasks.loop(seconds=30)
+    async def force_briefing_check(self):
+        import time as _t
+        val = get_live_setting("FORCE_BRIEFING")
+        if not val:
+            return
+        triggered_at = int(val)
+        if _t.time() - triggered_at > 300:  # 5분 지나면 무시
+            set_setting("FORCE_BRIEFING", "")
+            return
+        set_setting("FORCE_BRIEFING", "")
+        print("[브리핑] 웹 대시보드 강제실행 요청 감지")
+        try:
+            summary = await summarize_market_briefing()
+            if not summary:
+                print("[브리핑] 수집된 기사 없음, 건너뜀")
+                return
+            embed = discord.Embed(
+                title="📰 시장 브리핑 (강제실행)",
+                description=summary,
+                color=discord.Color.orange(),
+            )
+            now_kst = datetime.datetime.now(tz=_KST).strftime('%Y-%m-%d %H:%M KST')
+            embed.set_footer(text=f'브리핑 생성: {now_kst}')
+            briefing_channels = get_news_channels_by_type("briefing")
+            for row in briefing_channels:
+                ch = self.bot.get_channel(int(row["channel_id"]))
+                if ch:
+                    await ch.send(embed=embed)
+            print(f"[브리핑] 강제실행 완료 ({len(briefing_channels)}개 채널)")
+        except Exception:
+            print("[브리핑] 강제실행 오류:")
+            traceback.print_exc()
+
+    @force_briefing_check.before_loop
+    async def before_force_briefing_check(self):
         await self.bot.wait_until_ready()
 
     def _on_hot_news(self, refined_list: list[dict]) -> None:

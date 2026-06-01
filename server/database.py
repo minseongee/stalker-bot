@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -88,6 +89,19 @@ CREATE INDEX IF NOT EXISTS idx_news_items_fetched_at  ON news_items (fetched_at)
 CREATE INDEX IF NOT EXISTS idx_news_items_cluster_id  ON news_items (cluster_id);
 CREATE INDEX IF NOT EXISTS idx_news_items_hot         ON news_items (is_hot, fetched_at);
 CREATE INDEX IF NOT EXISTS idx_news_clusters_hot      ON news_clusters (is_hot, refined_at);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id      TEXT PRIMARY KEY,
+    username     TEXT NOT NULL,
+    global_name  TEXT NOT NULL,
+    avatar       TEXT,
+    updated_at   INTEGER NOT NULL
+);
 """
 
 
@@ -519,3 +533,140 @@ def get_message_id(cluster_id: str, channel_id: str) -> int | None:
             (cluster_id, channel_id),
         ).fetchone()
         return row["message_id"] if row else None
+
+
+# ── settings ──────────────────────────────────────────────────────────────────
+
+_SETTING_DEFAULTS = {
+    "HOT_SCORE_THRESHOLD":   "35",
+    "HOT_EMPHASIS_THRESHOLD": "60",
+    "NEWS_POLL_INTERVAL":    "60",
+}
+
+def get_live_setting(key: str) -> str:
+    """DB 우선, 없으면 env, 없으면 기본값."""
+    with _conn() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        if row:
+            return row["value"]
+    return os.getenv(key, _SETTING_DEFAULTS.get(key, ""))
+
+def get_all_settings() -> dict:
+    defaults = {k: os.getenv(k, v) for k, v in _SETTING_DEFAULTS.items()}
+    with _conn() as conn:
+        rows = conn.execute("SELECT key, value FROM settings").fetchall()
+        for r in rows:
+            defaults[r["key"]] = r["value"]
+    return defaults
+
+def set_setting(key: str, value: str) -> None:
+    with _conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)",
+            (key, value),
+        )
+
+
+# ── admin stats ───────────────────────────────────────────────────────────────
+
+def get_admin_stats() -> dict:
+    import time as _time
+    now = int(_time.time())
+    today_start     = now - (now % 86400)
+    yesterday_start = today_start - 86400
+
+    with _conn() as conn:
+        total_news     = conn.execute("SELECT COUNT(*) FROM news_items").fetchone()[0]
+        hot_news       = conn.execute("SELECT COUNT(*) FROM news_items WHERE is_hot=1").fetchone()[0]
+        today_news     = conn.execute("SELECT COUNT(*) FROM news_items WHERE fetched_at>=?", (today_start,)).fetchone()[0]
+        yesterday_news = conn.execute(
+            "SELECT COUNT(*) FROM news_items WHERE fetched_at>=? AND fetched_at<?",
+            (yesterday_start, today_start),
+        ).fetchone()[0]
+        total_users    = conn.execute("SELECT COUNT(DISTINCT user_id) FROM channels").fetchone()[0]
+        total_channels = conn.execute("SELECT COUNT(*) FROM channels").fetchone()[0]
+        total_alerts   = conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0]
+        source_rows    = conn.execute(
+            "SELECT source, COUNT(*) cnt FROM news_items GROUP BY source ORDER BY cnt DESC LIMIT 10"
+        ).fetchall()
+        daily_rows     = conn.execute(
+            """SELECT date(fetched_at, 'unixepoch', 'localtime') day, COUNT(*) cnt
+               FROM news_items
+               WHERE fetched_at >= ?
+               GROUP BY day ORDER BY day""",
+            (now - 86400 * 7,),
+        ).fetchall()
+
+    return {
+        "total_news":        total_news,
+        "hot_news":          hot_news,
+        "today_news":        today_news,
+        "yesterday_news":    yesterday_news,
+        "total_users":       total_users,
+        "total_channels":    total_channels,
+        "total_alerts_fired": total_alerts,
+        "news_by_source":    [{"source": r["source"], "count": r["cnt"]} for r in source_rows],
+        "news_daily":        [{"day": r["day"], "count": r["cnt"]} for r in daily_rows],
+    }
+
+
+# ── admin user management ─────────────────────────────────────────────────────
+
+def get_users_summary() -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute("""
+            SELECT
+                c.user_id,
+                COUNT(*)            AS channel_count,
+                SUM(c.alert_enabled) AS alert_on_count,
+                MAX(c.created_at)   AS last_seen
+            FROM channels c
+            GROUP BY c.user_id
+            ORDER BY last_seen DESC
+        """).fetchall()
+        return [dict(r) for r in rows]
+
+def get_user_detail(user_id: str) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute("""
+            SELECT c.*,
+                   (SELECT COUNT(*) FROM alerts a WHERE a.channel_id=c.id) AS fired_count
+            FROM channels c
+            WHERE c.user_id=?
+            ORDER BY c.created_at DESC
+        """, (user_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ── user_profiles ─────────────────────────────────────────────────────────────
+
+def upsert_user_profile(user_id: str, username: str, global_name: str, avatar: str | None) -> None:
+    with _conn() as conn:
+        conn.execute(
+            """INSERT INTO user_profiles (user_id, username, global_name, avatar, updated_at)
+               VALUES (?,?,?,?,?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                 username=excluded.username, global_name=excluded.global_name,
+                 avatar=excluded.avatar, updated_at=excluded.updated_at""",
+            (user_id, username, global_name, avatar, int(time.time())),
+        )
+
+def get_user_profile(user_id: str) -> dict | None:
+    with _conn() as conn:
+        row = conn.execute("SELECT * FROM user_profiles WHERE user_id=?", (user_id,)).fetchone()
+        return dict(row) if row else None
+
+
+# ── alert history ─────────────────────────────────────────────────────────────
+
+def get_user_alerts(user_id: str) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute("""
+            SELECT a.id, a.side, a.fired_at,
+                   c.stock_code, c.channel_type
+            FROM alerts a
+            JOIN channels c ON a.channel_id = c.id
+            WHERE c.user_id = ?
+            ORDER BY a.fired_at DESC
+        """, (user_id,)).fetchall()
+        return [dict(r) for r in rows]

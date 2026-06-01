@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>통계 — Stalker Bot</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#0f1117; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; min-height:100vh; }
+    header { display:flex; align-items:center; padding:14px 24px; gap:12px; background:#1a1d27; border-bottom:1px solid #2a2d3a; }
+    .back-btn { color:#7dd3fc; text-decoration:none; font-size:0.85rem; }
+    h1 { font-size:1rem; font-weight:600; color:#fff; }
+    main { max-width:960px; margin:32px auto; padding:0 24px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-bottom:28px; }
+    .scard { background:#16213e; border:1px solid #1e3a5f; border-radius:10px; padding:16px 20px; }
+    .scard-label { font-size:0.72rem; color:#666; margin-bottom:4px; }
+    .scard-value { font-size:1.5rem; font-weight:700; color:#7dd3fc; }
+    .scard-sub { font-size:0.72rem; color:#555; margin-top:2px; }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .panel { background:#16213e; border:1px solid #1e3a5f; border-radius:10px; padding:20px; }
+    .panel-title { font-size:0.8rem; font-weight:700; color:#7dd3fc; text-transform:uppercase; letter-spacing:.4px; margin-bottom:16px; }
+    .source-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+    .source-name { font-size:0.82rem; color:#ccc; min-width:80px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .bar-wrap { flex:1; height:8px; background:#0f1117; border-radius:4px; overflow:hidden; }
+    .bar-fill { height:100%; background:#3b82f6; border-radius:4px; }
+    .source-cnt { font-size:0.78rem; color:#666; min-width:30px; text-align:right; }
+    .daily-wrap { display:flex; align-items:flex-end; gap:4px; height:80px; }
+    .daily-bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; }
+    .daily-bar { width:100%; background:#3b82f6; border-radius:2px 2px 0 0; min-height:2px; }
+    .daily-label { font-size:0.6rem; color:#555; white-space:nowrap; }
+    .loading { text-align:center; padding:40px; color:#555; }
+  </style>
+</head>
+<body>
+<header>
+  <a href="/administrator" class="back-btn">← 대시보드</a>
+  <h1>📊 통계</h1>
+</header>
+<main>
+  <div class="grid" id="stat-cards"><div class="loading">불러오는 중…</div></div>
+  <div class="row">
+    <div class="panel">
+      <div class="panel-title">출처별 뉴스 수</div>
+      <div id="source-chart"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">최근 7일 수집량</div>
+      <div class="daily-wrap" id="daily-chart"></div>
+    </div>
+  </div>
+</main>
+<script>
+async function load() {
+  const res = await fetch('/api/admin/stats');
+  const s = await res.json();
+
+  document.getElementById('stat-cards').innerHTML = `
+    <div class="scard"><div class="scard-label">총 뉴스</div><div class="scard-value">${s.total_news.toLocaleString()}</div></div>
+    <div class="scard"><div class="scard-label">핫뉴스</div><div class="scard-value" style="color:#f97316">${s.hot_news.toLocaleString()}</div></div>
+    <div class="scard"><div class="scard-label">오늘 수집</div><div class="scard-value">${s.today_news}</div><div class="scard-sub">어제 ${s.yesterday_news}건</div></div>
+    <div class="scard"><div class="scard-label">총 사용자</div><div class="scard-value">${s.total_users}</div></div>
+    <div class="scard"><div class="scard-label">총 채널</div><div class="scard-value">${s.total_channels}</div></div>
+    <div class="scard"><div class="scard-label">알림 발동</div><div class="scard-value">${s.total_alerts_fired}</div></div>
+  `;
+
+  const maxCnt = Math.max(1, ...s.news_by_source.map(r=>r.count));
+  document.getElementById('source-chart').innerHTML = s.news_by_source.map(r=>`
+    <div class="source-row">
+      <div class="source-name" title="${r.source}">${r.source}</div>
+      <div class="bar-wrap"><div class="bar-fill" style="width:${(r.count/maxCnt*100).toFixed(1)}%"></div></div>
+      <div class="source-cnt">${r.count}</div>
+    </div>`).join('');
+
+  const maxDay = Math.max(1, ...s.news_daily.map(r=>r.count));
+  document.getElementById('daily-chart').innerHTML = s.news_daily.map(r=>`
+    <div class="daily-bar-col">
+      <div class="daily-bar" style="height:${(r.count/maxDay*70).toFixed(0)}px" title="${r.count}건"></div>
+      <div class="daily-label">${r.day.slice(5)}</div>
+    </div>`).join('');
+}
+
+load();
+</script>
+</body>
+</html>
