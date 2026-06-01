@@ -76,6 +76,28 @@
     .alert-toggle input:checked + .toggle-track { background: #1b5e20; }
     .alert-toggle input:checked + .toggle-track::after { transform: translateX(14px); background: #4caf50; }
     #panel-empty { padding: 12px 14px; font-size: 12px; color: #555; }
+
+    #token-expired-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(0,0,0,.82);
+      align-items: center; justify-content: center;
+    }
+    #token-expired-overlay.show { display: flex; }
+    #token-expired-box {
+      background: #1e2836; border: 1px solid #2a3a50;
+      border-radius: 12px; padding: 36px 40px;
+      text-align: center; max-width: 360px;
+    }
+    #token-expired-box .icon { font-size: 48px; margin-bottom: 14px; }
+    #token-expired-box h2 { font-size: 18px; color: #fff; margin-bottom: 10px; }
+    #token-expired-box p  { font-size: 13px; color: #8a9bb0; line-height: 1.7; }
+    #token-expired-box code {
+      display: inline-block; margin-top: 12px;
+      background: #0d1520; border: 1px solid #2a3a50;
+      border-radius: 6px; padding: 6px 14px;
+      color: #4fc3f7; font-size: 14px; font-family: monospace;
+    }
   </style>
 </head>
 <body>
@@ -112,6 +134,15 @@
   </div>
 </div>
 
+<div id="token-expired-overlay">
+  <div id="token-expired-box">
+    <div class="icon">🔒</div>
+    <h2>세션이 만료되었습니다</h2>
+    <p>편집 링크의 유효 시간(10분)이 지났습니다.<br>Discord에서 명령어를 다시 실행해 새 링크를 받아주세요.</p>
+    <code>/차트수정</code>
+  </div>
+</div>
+
 <script>
 // ── 파라미터 ─────────────────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
@@ -128,6 +159,19 @@ const titleEl   = document.getElementById('stock-title');
 const wrapper   = document.getElementById('chart-wrapper');
 const canvas    = document.getElementById('overlay');
 const ctx       = canvas.getContext('2d');
+
+// ── 토큰 만료 처리 ───────────────────────────────────────────────────────
+function showTokenExpired() {
+  document.getElementById('token-expired-overlay').classList.add('show');
+  [btnDraw, btnFib, btnSave, btnReset].forEach(b => b.disabled = true);
+  setStatus('⚠️ 세션 만료 — Discord에서 /차트수정 을 다시 실행해주세요.');
+}
+async function guardedFetch(url, opts) {
+  const res = await fetch(url, opts);
+  if (res.status === 401) { showTokenExpired(); throw new Error('session_expired'); }
+  return res;
+}
+if (!TOKEN) showTokenExpired();
 const chList    = document.getElementById('channel-list');
 const chCount   = document.getElementById('ch-count');
 const panelEmpty= document.getElementById('panel-empty');
@@ -197,6 +241,7 @@ async function loadAll() {
       fetch(`/ohlcv/${CODE}?days=3000`),
       fetch(`/channels/me?token=${TOKEN}&code=${CODE}`),
     ]);
+    if (chRes.status === 401) { showTokenExpired(); return; }
     if (!ohlcvRes.ok) throw new Error('OHLCV 로드 실패');
     const ohlcv = await ohlcvRes.json();
     ohlcvData = {};
@@ -260,19 +305,19 @@ function renderChannelList() {
 async function deleteChannel(id) {
   if (!confirm(`채널 #${id}을 삭제할까요?`)) return;
   try {
-    const res = await fetch('/channels', {
+    const res = await guardedFetch('/channels', {
       method: 'DELETE', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: TOKEN, channel_id: id }),
     });
     if (!res.ok) throw new Error((await res.json()).detail);
     savedChannels = savedChannels.filter(c => c.id !== id);
     renderChannelList(); setStatus(`✅ 채널 #${id} 삭제 완료`);
-  } catch (e) { alert(`삭제 실패: ${e.message}`); }
+  } catch (e) { if (e.message !== 'session_expired') alert(`삭제 실패: ${e.message}`); }
 }
 
 async function toggleAlert(id, enabled) {
   try {
-    const res = await fetch(`/channels/${id}/alert`, {
+    const res = await guardedFetch(`/channels/${id}/alert`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: TOKEN, enabled }),
     });
@@ -281,11 +326,11 @@ async function toggleAlert(id, enabled) {
     const idx = savedChannels.findIndex(c => c.id === id);
     if (idx !== -1) savedChannels[idx] = updated;
     setStatus(`🔔 채널 #${id} 알림 ${enabled ? '켜짐' : '꺼짐'}`);
-  } catch (e) { alert(`알림 설정 실패: ${e.message}`); }
+  } catch (e) { if (e.message !== 'session_expired') alert(`알림 설정 실패: ${e.message}`); }
 }
 
 async function putChannel(ch) {
-  const res = await fetch(`/channels/${ch.id}`, {
+  const res = await guardedFetch(`/channels/${ch.id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       token: TOKEN,
