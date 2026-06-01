@@ -3,6 +3,7 @@ from discord.ext import commands
 import os
 import asyncio
 import traceback
+from pathlib import Path
 import dotenv
 
 dotenv.load_dotenv()
@@ -28,7 +29,7 @@ async def on_ready():
 
 async def main():
     async with bot:
-        for filename in os.listdir("./cogs"):
+        for filename in os.listdir(Path(__file__).parent / "cogs"):
             if filename.endswith(".py"):
                 await bot.load_extension(f"cogs.{filename[:-3]}")
                 print(f"[Cog] {filename} 로드 완료")

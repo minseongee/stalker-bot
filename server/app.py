@@ -12,7 +12,6 @@ from fastapi.staticfiles import StaticFiles
 
 from .ohlcv import gen_ohlcv
 from .database import (
-    consume_token,
     create_token,
     delete_channel,
     get_channels,
@@ -45,7 +44,7 @@ def push_hot_news(refined_list: list[dict]) -> None:
     """pipeline.py의 hot callback — 정제된 핫뉴스를 모든 SSE 구독자에게 전송."""
     payload = json.dumps(refined_list, ensure_ascii=False)
     dead = set()
-    for q in _sse_subscribers:
+    for q in list(_sse_subscribers):  # copy — 순회 중 set 변경 방지
         try:
             q.put_nowait(payload)
         except asyncio.QueueFull:
@@ -61,9 +60,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Stalker Bot API", lifespan=lifespan)
 
+_cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",")] \
+    if os.getenv("CORS_ORIGINS") else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -89,7 +90,6 @@ def news_dashboard(limit: int = Query(default=200, le=1000), hot_only: bool = Fa
         rows = get_hot_news_by_score(threshold, limit=limit)
     else:
         rows = get_recent_news_items(limit=limit)
-    import json as _json
     result = []
     for r in rows:
         result.append({
@@ -103,7 +103,7 @@ def news_dashboard(limit: int = Query(default=200, le=1000), hot_only: bool = Fa
             "is_hot":      bool(r["is_hot"]),
             "direction":   r["direction"] or "",
             "headline":    r["headline"] or "",
-            "stock_tags":  _json.loads(r["stock_tags"]) if r.get("stock_tags") else [],
+            "stock_tags":  json.loads(r["stock_tags"]) if r.get("stock_tags") else [],
         })
     return result
 

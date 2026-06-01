@@ -1,3 +1,4 @@
+import os
 """GPT 요약 정제 — 기존 AsyncOpenAI 클라이언트·gpt-5.4-mini 재사용."""
 import json
 
@@ -33,7 +34,7 @@ async def refine_cluster(cluster_id: str, items: list[dict]) -> dict | None:
     print(f"[Refiner] GPT 호출 중… (기사 {len(items)}건)")
     try:
         resp = await get_openai_client().responses.create(
-            model="gpt-5.4-mini",
+            model=os.getenv("OPENAI_MODEL", "gpt-5.4-mini"),
             input=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user",   "content": user_msg},

@@ -23,7 +23,7 @@ DUMMY_STOCKS: dict[str, dict] = {
     "006400": {"name": "삼성SDI", "base_price": 156000},
 }
 
-_executor = ThreadPoolExecutor(max_workers=2)
+_executor = ThreadPoolExecutor(max_workers=4)
 
 _KR_FONT = next(
     (f.name for f in fm.fontManager.ttflist if f.name in ("Nanum Gothic", "Apple SD Gothic Neo", "AppleGothic")),

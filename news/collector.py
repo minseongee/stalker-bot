@@ -135,4 +135,6 @@ async def collect_all() -> list[dict]:
     for r in results:
         if isinstance(r, list):
             items.extend(r)
+        elif isinstance(r, Exception):
+            print(f"[Collector] 소스 수집 오류: {r}")
     return items

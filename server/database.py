@@ -83,20 +83,27 @@ CREATE TABLE IF NOT EXISTS news_messages (
     message_id   INTEGER NOT NULL,
     PRIMARY KEY (cluster_id, channel_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_news_items_fetched_at  ON news_items (fetched_at);
+CREATE INDEX IF NOT EXISTS idx_news_items_cluster_id  ON news_items (cluster_id);
+CREATE INDEX IF NOT EXISTS idx_news_items_hot         ON news_items (is_hot, fetched_at);
+CREATE INDEX IF NOT EXISTS idx_news_clusters_hot      ON news_clusters (is_hot, refined_at);
 """
 
 
 def init_db() -> None:
     with _conn() as conn:
+        conn.execute("PRAGMA journal_mode=WAL")  # 동시 읽기 성능 향상
         conn.executescript(_SCHEMA)
-        try:
-            conn.execute("ALTER TABLE channels ADD COLUMN channel_type TEXT NOT NULL DEFAULT 'normal'")
-        except Exception:
-            pass
-        try:
-            conn.execute("ALTER TABLE channels ADD COLUMN alert_enabled INTEGER NOT NULL DEFAULT 1")
-        except Exception:
-            pass
+        for sql in [
+            "ALTER TABLE channels ADD COLUMN channel_type TEXT NOT NULL DEFAULT 'normal'",
+            "ALTER TABLE channels ADD COLUMN alert_enabled INTEGER NOT NULL DEFAULT 1",
+        ]:
+            try:
+                conn.execute(sql)
+            except Exception as e:
+                if "duplicate column" not in str(e).lower():
+                    print(f"[DB] 마이그레이션 경고: {e}")
         # news_channels 스키마 마이그레이션: guild_id 단일 PK → (guild_id, channel_type) 복합 PK
         try:
             pk_cols = [r[5] for r in conn.execute("PRAGMA table_info(news_channels)").fetchall() if r[5] > 0]
@@ -116,8 +123,9 @@ def init_db() -> None:
                 """)
                 conn.execute("DROP TABLE news_channels")
                 conn.execute("ALTER TABLE news_channels_new RENAME TO news_channels")
-        except Exception:
-            pass
+                print("[DB] news_channels 복합 PK 마이그레이션 완료")
+        except Exception as e:
+            print(f"[DB] news_channels 마이그레이션 실패: {e}")
 
 
 @contextmanager
@@ -486,6 +494,13 @@ def get_cluster_items(cluster_id: str) -> list[dict]:
 
 
 # ── news_messages ────────────────────────────────────────────────────────────
+
+def get_broadcast_cluster_ids() -> set[str]:
+    """봇 시작 시 이미 전송된 cluster_id 목록 반환 — 재시작 후 재전송 방지."""
+    with _conn() as conn:
+        rows = conn.execute("SELECT DISTINCT cluster_id FROM news_messages").fetchall()
+        return {r["cluster_id"] for r in rows}
+
 
 def save_message_id(cluster_id: str, channel_id: str, message_id: int) -> None:
     with _conn() as conn:

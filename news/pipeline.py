@@ -31,6 +31,37 @@ def register_hot_callback(fn: Callable[[list[dict]], None]) -> None:
     _hot_callbacks.append(fn)
 
 
+_REFINE_SEMAPHORE = asyncio.Semaphore(3)  # 동시 GPT 호출 최대 3개
+
+
+async def _refine_one(cid: str, hot_score: float, items_in_cluster: list[dict]) -> dict | None:
+    """단일 클러스터 GPT 정제 — 세마포어로 동시 호출 제한."""
+    async with _REFINE_SEMAPHORE:
+        refined = await refine_cluster(cid, items_in_cluster)
+    if refined is None:
+        return None
+    sources_json = json.dumps(refined["sources"], ensure_ascii=False)
+    stock_tags   = json.dumps(refined["stock_tags"], ensure_ascii=False)
+    for item in items_in_cluster:
+        update_news_refined(
+            item["guid"],
+            refined["summary"],
+            refined["headline"],
+            refined["direction"],
+            stock_tags,
+            sources_json,
+        )
+    print(f"[Pipeline] 클러스터 {cid[:8]}… 정제 완료: {refined['headline']}")
+    fetched_at = max((item.get("fetched_at") or 0) for item in items_in_cluster)
+    mark_cluster_refined(cid)
+    return {
+        "cluster_id": cid,
+        "fetched_at": fetched_at,
+        "hot_score":  hot_score,
+        **refined,
+    }
+
+
 async def _refine_and_broadcast(hot_clusters: dict[str, float]) -> None:
     """미정제 핫 클러스터를 GPT로 정제하고 콜백으로 전송."""
     # DB에 is_hot=1인 미정제 클러스터도 포함 (수동 업데이트 등)
@@ -41,6 +72,7 @@ async def _refine_and_broadcast(hot_clusters: dict[str, float]) -> None:
     all_clusters = {**hot_clusters, **extra_rows}
 
     newly_refined: list[dict] = []
+    gpt_tasks: list[tuple[str, float, list[dict]]] = []  # GPT 정제 필요한 클러스터
     for cid, hot_score in all_clusters.items():
         items_in_cluster = get_cluster_items(cid)
         has_summary   = [i for i in items_in_cluster if i.get("summary")]
@@ -83,32 +115,19 @@ async def _refine_and_broadcast(hot_clusters: dict[str, float]) -> None:
             mark_cluster_refined(cid)
             continue
 
-        refined = await refine_cluster(cid, items_in_cluster)
-        if refined is None:
-            continue
+        gpt_tasks.append((cid, hot_score, items_in_cluster))
 
-        sources_json = json.dumps(refined["sources"], ensure_ascii=False)
-        stock_tags   = json.dumps(refined["stock_tags"], ensure_ascii=False)
-
-        for item in items_in_cluster:
-            update_news_refined(
-                item["guid"],
-                refined["summary"],
-                refined["headline"],
-                refined["direction"],
-                stock_tags,
-                sources_json,
-            )
-        print(f"[Pipeline] 클러스터 {cid[:8]}… 정제 완료: {refined['headline']}")
-
-        fetched_at = max((item.get("fetched_at") or 0) for item in items_in_cluster)
-        mark_cluster_refined(cid)
-        newly_refined.append({
-            "cluster_id": cid,
-            "fetched_at": fetched_at,
-            "hot_score":  hot_score,
-            **refined,
-        })
+    # GPT 정제 병렬 실행
+    if gpt_tasks:
+        results = await asyncio.gather(
+            *[_refine_one(cid, score, items) for cid, score, items in gpt_tasks],
+            return_exceptions=True,
+        )
+        for r in results:
+            if isinstance(r, dict):
+                newly_refined.append(r)
+            elif isinstance(r, Exception):
+                print(f"[Pipeline] GPT 정제 오류: {r}")
 
     if newly_refined and _hot_callbacks:
         for fn in _hot_callbacks:

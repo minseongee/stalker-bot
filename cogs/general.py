@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+from utils import KST as _KST
 import os
 import traceback
 
@@ -17,14 +18,13 @@ from utils.chart import fetch_chart, supported_codes
 from server.database import (
     get_watchlist, add_to_watchlist, remove_from_watchlist,
     set_news_channel, get_news_channels_by_type,
-    save_message_id, get_message_id,
+    save_message_id, get_message_id, get_broadcast_cluster_ids,
 )
 from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
 
 
 SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
 
-_KST = datetime.timezone(datetime.timedelta(hours=9))
 _NEWS_TIMES = [
     datetime.time(hour=8,  tzinfo=_KST),
     datetime.time(hour=12, tzinfo=_KST),
@@ -417,9 +417,11 @@ class General(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
+        global _last_broadcast_cluster_ids
+        _last_broadcast_cluster_ids |= get_broadcast_cluster_ids()
         from news.pipeline import register_hot_callback
         register_hot_callback(self._on_hot_news)
-        print("[뉴스] hot news 콜백 등록 완료")
+        print(f"[뉴스] hot news 콜백 등록 완료 (기존 broadcast {len(_last_broadcast_cluster_ids)}건 로드)")
         self.daily_briefing.start()
 
     def cog_unload(self):
