@@ -684,9 +684,9 @@ class General(commands.Cog):
                 await interaction.followup.send("⚠️ 수집된 기사가 없어 브리핑을 생성할 수 없습니다.", ephemeral=True)
                 return
             embed = discord.Embed(
-                title="📰 시장 브리핑",
+                title="📰 시장 브리핑 (강제실행)",
                 description=summary,
-                color=discord.Color.green(),
+                color=discord.Color.orange(),
             )
             now_kst = datetime.datetime.now(tz=_KST).strftime('%Y-%m-%d %H:%M KST')
             embed.set_footer(text=f'브리핑 생성: {now_kst}')
