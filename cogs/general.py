@@ -105,7 +105,7 @@ def _build_hot_embed(news: dict) -> discord.Embed:
     dir_label = "📈 호재" if direction == "positive" else ("📉 악재" if direction == "negative" else "📌 중립")
     embed.add_field(name="시장 영향", value=dir_label, inline=True)
 
-    tags = news.get("tags", [])
+    tags = news.get("stock_tags", [])
     if tags:
         def _fmt_tag(t: str) -> str:
             if ":" in t:
@@ -496,7 +496,7 @@ class General(commands.Cog):
 
     async def _notify_watchlist(self, news: dict) -> None:
         """핫뉴스의 stock_tags와 관심 종목 교집합이 있는 유저에게 DM 전송."""
-        tags = news.get("tags", [])
+        tags = news.get("stock_tags", [])
         # "005930:삼성전자" → "005930", 코드 없는 섹터명은 제외
         codes = [t.split(":")[0] for t in tags if ":" in t]
         if not codes:

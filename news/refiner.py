@@ -1,5 +1,5 @@
-import os
 """GPT 요약 정제 — 기존 AsyncOpenAI 클라이언트·gpt-5.4-mini 재사용."""
+import os
 import json
 
 from utils.openai_client import get_openai_client
