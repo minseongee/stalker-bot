@@ -14,7 +14,6 @@ bot = commands.Bot(command_prefix=";", intents=intents)
 
 @bot.event
 async def on_ready():
-    # 길드에 등록된 중복 명령어 제거 후 전역으로 통일
     guild_id = os.getenv("GUILD_ID")
     if guild_id:
         guild = discord.Object(id=int(guild_id))
@@ -35,7 +34,6 @@ async def main():
                 print(f"[Cog] {filename} 로드 완료")
         from cogs.general import StockView
         bot.add_view(StockView())
-
         from news.pipeline import run_loop
         from server.app import push_hot_news
         from news.pipeline import register_hot_callback

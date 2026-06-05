@@ -19,7 +19,7 @@ from server.database import (
     get_watchlist, add_to_watchlist, remove_from_watchlist,
     set_news_channel, get_news_channels_by_type,
     save_message_id, get_message_id, get_broadcast_cluster_ids,
-    get_live_setting, set_setting,
+    get_live_setting, set_setting, get_users_watching,
 )
 from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
 
@@ -102,9 +102,17 @@ def _build_hot_embed(news: dict) -> discord.Embed:
         description=news["summary"],
         color=color,
     )
+    dir_label = "📈 호재" if direction == "positive" else ("📉 악재" if direction == "negative" else "📌 중립")
+    embed.add_field(name="시장 영향", value=dir_label, inline=True)
+
     tags = news.get("tags", [])
     if tags:
-        embed.add_field(name="관련 종목/섹터", value=" ".join(f"`{t}`" for t in tags), inline=False)
+        def _fmt_tag(t: str) -> str:
+            if ":" in t:
+                code, name = t.split(":", 1)
+                return f"`{code}` {name}"
+            return f"`{t}`"
+        embed.add_field(name="관련주", value="\n".join(_fmt_tag(t) for t in tags), inline=True)
 
     sources = news.get("sources", [])
     if sources:
@@ -409,6 +417,8 @@ class General(commands.Cog):
 
     @tasks.loop(time=_NEWS_TIMES)
     async def daily_briefing(self):
+        now_kst = datetime.datetime.now(tz=_KST).strftime('%Y-%m-%d %H:%M KST')
+        print(f"[브리핑] 스케줄 실행 시작 ({now_kst})")
         try:
             summary = await summarize_market_briefing()
             if not summary:
@@ -444,6 +454,10 @@ class General(commands.Cog):
 
     @tasks.loop(seconds=30)
     async def force_briefing_check(self):
+        if not self.daily_briefing.is_running():
+            print("[브리핑] daily_briefing 태스크 중단 감지 — 재시작")
+            self.daily_briefing.start()
+
         import time as _t
         val = get_live_setting("FORCE_BRIEFING")
         if not val:
@@ -479,6 +493,45 @@ class General(commands.Cog):
     @force_briefing_check.before_loop
     async def before_force_briefing_check(self):
         await self.bot.wait_until_ready()
+
+    async def _notify_watchlist(self, news: dict) -> None:
+        """핫뉴스의 stock_tags와 관심 종목 교집합이 있는 유저에게 DM 전송."""
+        tags = news.get("tags", [])
+        # "005930:삼성전자" → "005930", 코드 없는 섹터명은 제외
+        codes = [t.split(":")[0] for t in tags if ":" in t]
+        if not codes:
+            return
+
+        matched = get_users_watching(codes)
+        if not matched:
+            return
+
+        direction = news.get("direction", "neutral")
+        dir_label = "📈 호재" if direction == "positive" else ("📉 악재" if direction == "negative" else "📌 중립")
+
+        for user_id, watching_codes in matched.items():
+            try:
+                user = await self.bot.fetch_user(int(user_id))
+            except Exception:
+                continue
+
+            from server.ohlcv import DUMMY_STOCKS
+            names = [DUMMY_STOCKS.get(c, {}).get("name", c) for c in watching_codes]
+            stock_str = ", ".join(f"**{n}**({c})" for n, c in zip(names, watching_codes))
+
+            notify_embed = discord.Embed(
+                title=f"🔔 관심 종목 핫뉴스 — {dir_label}",
+                description=f"{stock_str} 관련 뉴스가 감지됐습니다.\n\n**{news['headline']}**\n{news['summary']}",
+                color=discord.Color.gold(),
+            )
+            notify_embed.set_footer(text="Stalker Bot · 관심 종목 알림")
+            try:
+                await user.send(embed=notify_embed)
+                print(f"[관심종목알림] {user_id} → {watching_codes}")
+            except discord.Forbidden:
+                pass  # DM 차단한 유저
+            except Exception as e:
+                print(f"[관심종목알림] {user_id} 전송 실패: {e}")
 
     def _on_hot_news(self, refined_list: list[dict]) -> None:
         """pipeline.py에서 새 핫뉴스 정제 완료 시 호출 (동기 콜백)."""
@@ -540,6 +593,8 @@ class General(commands.Cog):
                     print(f"[{ch_type.upper()}] 채널 {row['channel_id']} 전송: {news['headline']}")
                 except Exception as e:
                     print(f"[{ch_type.upper()}] 채널 {row['channel_id']} 전송 실패: {e}")
+
+            await self._notify_watchlist(news)
 
     @app_commands.command(name="핫뉴스채널", description="이 채널을 실시간 핫뉴스 채널로 지정합니다. (관리자 전용)")
     @app_commands.checks.has_permissions(administrator=True)

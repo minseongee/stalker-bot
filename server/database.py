@@ -328,6 +328,24 @@ def remove_from_watchlist(user_id: str, stock_code: str) -> bool:
         return cur.rowcount > 0
 
 
+def get_users_watching(stock_codes: list[str]) -> dict[str, list[str]]:
+    """주어진 종목 코드 목록 중 하나라도 관심 종목에 등록한 유저 반환.
+    반환: {user_id: [매칭된 종목코드, ...]}
+    """
+    if not stock_codes:
+        return {}
+    placeholders = ",".join("?" * len(stock_codes))
+    with _conn() as conn:
+        rows = conn.execute(
+            f"SELECT user_id, stock_code FROM watchlist WHERE stock_code IN ({placeholders})",
+            stock_codes,
+        ).fetchall()
+    result: dict[str, list[str]] = {}
+    for r in rows:
+        result.setdefault(r["user_id"], []).append(r["stock_code"])
+    return result
+
+
 # ── alerts ───────────────────────────────────────────────────────────────────
 
 ALERT_COOLDOWN = 3600  # 1시간
