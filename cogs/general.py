@@ -27,12 +27,9 @@ from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
 SERVER_URL    = os.getenv("SERVER_URL", "http://localhost:8000")
 DASHBOARD_URL = os.getenv("EDITOR_BASE_URL", SERVER_URL)
 
-_NEWS_TIMES = [
-    datetime.time(hour=8,  tzinfo=_KST),
-    datetime.time(hour=12, tzinfo=_KST),
-    datetime.time(hour=16, tzinfo=_KST),
-    datetime.time(hour=21, tzinfo=_KST),
-]
+_NEWS_HOURS: list[int] = [8, 12, 16, 21]  # KST 브리핑 시각 (정각)
+
+_briefing_fired: set[tuple] = set()  # (date, hour) — 당일 이미 실행된 시각 추적
 
 _last_broadcast_cluster_ids: set[str] = set()  # 중복 브로드캐스트 방지
 _sent_messages: dict[str, dict[str, int]] = {}  # cluster_id → {channel_id: message_id}
@@ -410,53 +407,71 @@ class General(commands.Cog):
         print(f"[뉴스] hot news 콜백 등록 완료 (기존 broadcast {len(_last_broadcast_cluster_ids)}건 로드)")
         self.daily_briefing.start()
         self.force_briefing_check.start()
+        next_hours = ", ".join(f"{h:02d}:00" for h in _NEWS_HOURS)
+        print(f"[브리핑] 브리핑 스케줄: {next_hours} KST")
 
     def cog_unload(self):
         self.daily_briefing.cancel()
         self.force_briefing_check.cancel()
 
-    @tasks.loop(time=_NEWS_TIMES)
+    @tasks.loop(seconds=30)
     async def daily_briefing(self):
-        now_kst = datetime.datetime.now(tz=_KST).strftime('%Y-%m-%d %H:%M KST')
-        print(f"[브리핑] 스케줄 실행 시작 ({now_kst})")
-        try:
-            summary = await summarize_market_briefing()
-            if not summary:
-                print("[브리핑] 수집된 기사 없음, 건너뜀")
-                return
-            embed = discord.Embed(
-                title="📰 시장 브리핑",
-                description=summary,
-                color=discord.Color.green(),
-            )
-            now_kst = datetime.datetime.now(tz=_KST).strftime('%Y-%m-%d %H:%M KST')
-            embed.set_footer(text=f'브리핑 생성: {now_kst}')
-            briefing_channels = get_news_channels_by_type("briefing")
-            if not briefing_channels:
-                print("[브리핑] 채널 미배정 — /브리핑채널 명령어로 채널을 지정해주세요.")
-                return
-            for row in briefing_channels:
-                ch = self.bot.get_channel(int(row["channel_id"]))
-                if ch is None:
-                    continue
-                try:
-                    await ch.send(embed=embed)
-                    print(f"[브리핑] 채널 {row['channel_id']} 전송 완료")
-                except Exception as e:
-                    print(f"[브리핑] 채널 {row['channel_id']} 전송 실패: {e}")
-        except Exception:
-            print("[브리핑] daily_briefing 오류:")
-            traceback.print_exc()
+        global _briefing_fired
+        now = datetime.datetime.now(tz=_KST)
+        today = now.date()
+
+        # 어제 날짜 항목 정리
+        _briefing_fired = {k for k in _briefing_fired if k[0] == today}
+
+        for hour in _NEWS_HOURS:
+            key = (today, hour)
+            if key in _briefing_fired:
+                continue
+            sched = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+            delta = (now - sched).total_seconds()
+            if not (0 <= delta <= 300):  # 정각 ~ +5분 이내
+                continue
+
+            _briefing_fired.add(key)
+            now_str = now.strftime('%Y-%m-%d %H:%M KST')
+            print(f"[브리핑] 스케줄 실행 시작 ({now_str}, 예정 {hour:02d}:00)")
+            try:
+                summary = await summarize_market_briefing()
+                if not summary:
+                    print("[브리핑] 수집된 기사 없음, 건너뜀")
+                    return
+                embed = discord.Embed(
+                    title="📰 시장 브리핑",
+                    description=summary,
+                    color=discord.Color.green(),
+                )
+                embed.set_footer(text=f'브리핑 생성: {now.strftime("%Y-%m-%d %H:%M KST")}')
+                briefing_channels = get_news_channels_by_type("briefing")
+                if not briefing_channels:
+                    print("[브리핑] 채널 미배정 — /브리핑채널 명령어로 채널을 지정해주세요.")
+                    return
+                for row in briefing_channels:
+                    ch = self.bot.get_channel(int(row["channel_id"]))
+                    if ch is None:
+                        continue
+                    try:
+                        await ch.send(embed=embed)
+                        print(f"[브리핑] 채널 {row['channel_id']} 전송 완료")
+                    except Exception as e:
+                        print(f"[브리핑] 채널 {row['channel_id']} 전송 실패: {e}")
+            except Exception:
+                print("[브리핑] daily_briefing 오류:")
+                traceback.print_exc()
+            return  # 한 번에 하나의 시각만 처리
 
     @daily_briefing.before_loop
     async def before_daily_briefing(self):
         await self.bot.wait_until_ready()
+        next_hours = ", ".join(f"{h:02d}:00" for h in _NEWS_HOURS)
+        print(f"[브리핑] 폴링 루프 시작 — 대상 시각: {next_hours} KST")
 
     @tasks.loop(seconds=30)
     async def force_briefing_check(self):
-        if not self.daily_briefing.is_running():
-            print("[브리핑] daily_briefing 태스크 중단 감지 — 재시작")
-            self.daily_briefing.start()
 
         import time as _t
         val = get_live_setting("FORCE_BRIEFING")
