@@ -5,13 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>차트 수정 — Stalker Bot</title>
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { background:#0f1117; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; min-height:100vh; }
-    header { display:flex; align-items:center; gap:12px; padding:14px 24px; background:#1a1d27; border-bottom:1px solid #2a2d3a; }
-    .back-btn { color:#7dd3fc; text-decoration:none; font-size:0.85rem; }
-    .back-btn:hover { text-decoration:underline; }
-    h1 { font-size:1rem; font-weight:600; color:#fff; }
-    main { max-width:720px; margin:32px auto; padding:0 24px; }
+    main { max-width:680px; margin:32px auto; padding:0 24px; }
+    .page-title { font-size:1.1rem; font-weight:700; color:#fff; margin-bottom:20px; }
 
     .search-wrap { margin-bottom:16px; }
     .search-input {
@@ -58,12 +53,9 @@
     .loading { text-align:center; padding:48px; color:#555; }
   </style>
 </head>
-<body>
-<header>
-  <a href="/dashboard" class="back-btn">← 대시보드</a>
-  <h1>✏️ 차트 수정</h1>
-</header>
+<body data-page="chart">
 <main>
+  <div class="page-title">✏️ 차트 수정</div>
   <div class="search-wrap">
     <input class="search-input" id="search" placeholder="종목명 또는 코드 검색…" oninput="render()">
   </div>
@@ -135,5 +127,6 @@ async function openEditor(code, name, btn) {
 
 load();
 </script>
+<script src="/static/sidebar.js"></script>
 </body>
 </html>

@@ -38,6 +38,9 @@ from .database import (
     update_channel_alert,
     update_channel_coords,
     validate_token,
+    get_announcements,
+    add_announcement,
+    delete_announcement,
 )
 from .models import (
     ChannelAlertToggleRequest,
@@ -297,6 +300,33 @@ def api_trigger_briefing(request: Request):
     _admin_check(request)
     import time as _t
     set_setting("FORCE_BRIEFING", str(int(_t.time())))
+    return {"ok": True}
+
+
+@app.get("/api/announcements")
+def api_get_announcements(request: Request):
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    return get_announcements()
+
+
+@app.post("/api/admin/announcements")
+async def api_post_announcement(request: Request):
+    user = _admin_check(request)
+    body = await request.json()
+    title = (body.get("title") or "").strip()
+    content = (body.get("content") or "").strip()
+    if not title or not content:
+        raise HTTPException(status_code=400, detail="제목과 내용을 입력해주세요.")
+    announcement_id = add_announcement(title, content, user["id"], user.get("global_name", user["id"]))
+    return {"ok": True, "id": announcement_id}
+
+
+@app.delete("/api/admin/announcements/{announcement_id}")
+def api_delete_announcement(announcement_id: int, request: Request):
+    _admin_check(request)
+    delete_announcement(announcement_id)
     return {"ok": True}
 
 

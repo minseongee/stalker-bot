@@ -5,18 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>관심 종목 — Stalker Bot</title>
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { background:#0f1117; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; min-height:100vh; }
-    header { display:flex; align-items:center; gap:12px; padding:14px 24px; background:#1a1d27; border-bottom:1px solid #2a2d3a; }
-    .back-btn { color:#7dd3fc; text-decoration:none; font-size:0.85rem; }
-    .back-btn:hover { text-decoration:underline; }
-    h1 { font-size:1rem; font-weight:600; color:#fff; }
-    main { max-width:720px; margin:32px auto; padding:0 24px; }
-    .search-wrap { margin-bottom:16px; }
+    main { max-width:680px; margin:32px auto; padding:0 24px; }
+    .page-title { font-size:1.1rem; font-weight:700; color:#fff; margin-bottom:20px; }
+    .search-wrap { margin-bottom:14px; }
     .search-input {
       width:100%; background:#16213e; border:1px solid #1e3a5f;
       border-radius:10px; color:#e0e0e0; padding:10px 16px;
-      font-size:0.9rem; outline:none;
+      font-size:0.9rem; outline:none; font-family:inherit;
     }
     .search-input:focus { border-color:#7dd3fc; }
     .list { background:#16213e; border:1px solid #1e3a5f; border-radius:12px; overflow:hidden; }
@@ -45,20 +40,18 @@
     .toggle-btn.off:hover { background:#2a4d7f; }
     .toggle-btn:disabled { opacity:0.5; cursor:not-allowed; }
     .loading { text-align:center; padding:48px; color:#555; }
-    .empty { text-align:center; padding:48px; color:#555; }
+    .empty   { text-align:center; padding:48px; color:#555; }
   </style>
 </head>
-<body>
-<header>
-  <a href="/dashboard" class="back-btn">← 대시보드</a>
-  <h1>⭐ 관심 종목</h1>
-</header>
+<body data-page="watchlist">
 <main>
+  <div class="page-title">⭐ 관심 종목</div>
   <div class="search-wrap">
     <input class="search-input" id="search" placeholder="종목명 또는 코드 검색…" oninput="render()">
   </div>
   <div id="list-wrap"><div class="loading">불러오는 중…</div></div>
 </main>
+<script src="/static/sidebar.js"></script>
 <script>
 let stocks = [];
 
@@ -105,9 +98,7 @@ function row(s) {
 async function toggle(code, btn) {
   btn.disabled = true;
   const isOn = btn.classList.contains('on');
-  const method = isOn ? 'DELETE' : 'POST';
-  await fetch(`/api/me/watchlist/${code}`, { method });
-  // 로컬 상태 업데이트
+  await fetch(`/api/me/watchlist/${code}`, { method: isOn ? 'DELETE' : 'POST' });
   const s = stocks.find(s => s.code === code);
   if (s) s.in_watchlist = !isOn;
   render();

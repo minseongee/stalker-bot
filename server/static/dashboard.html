@@ -3,92 +3,214 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>내 대시보드 — Stalker Bot</title>
+  <title>홈 — Stalker Bot</title>
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { background:#0f1117; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; min-height:100vh; }
-    header {
-      display:flex; align-items:center; justify-content:space-between;
-      padding:16px 28px; background:#1a1d27; border-bottom:1px solid #2a2d3a;
-    }
-    .header-left { display:flex; align-items:center; gap:10px; }
-    .logo { font-size:1.2rem; }
-    h1 { font-size:1rem; font-weight:600; color:#fff; }
-    .user-info { display:flex; align-items:center; gap:10px; }
-    .avatar { width:32px; height:32px; border-radius:50%; background:#2a2d3a; object-fit:cover; }
-    .username { font-size:0.85rem; color:#aaa; }
-    .logout-btn { font-size:0.8rem; color:#666; background:none; border:1px solid #2a2d3a; border-radius:6px; padding:4px 10px; cursor:pointer; text-decoration:none; }
-    .logout-btn:hover { color:#aaa; border-color:#444; }
-    main { max-width:960px; margin:48px auto; padding:0 24px; }
+    main { max-width:820px; margin:0 auto; padding:36px 28px; }
+
+    /* 환영 헤더 */
     .greeting { margin-bottom:32px; }
-    .greeting h2 { font-size:1.4rem; font-weight:600; color:#fff; margin-bottom:4px; }
-    .greeting p { font-size:0.9rem; color:#666; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:16px; }
+    .greeting h2 { font-size:1.4rem; font-weight:700; color:#fff; margin-bottom:4px; }
+    .greeting p  { font-size:0.88rem; color:#666; }
+
+    /* 공지사항 */
+    .section-title {
+      font-size:0.75rem; font-weight:700; color:#555;
+      text-transform:uppercase; letter-spacing:.6px; margin-bottom:10px;
+    }
+    .announcements { margin-bottom:36px; }
+    .notice-list { display:flex; flex-direction:column; gap:10px; }
+    .notice-card {
+      background:#16213e; border:1px solid #1e3a5f; border-radius:12px;
+      padding:18px 20px;
+    }
+    .notice-head {
+      display:flex; align-items:baseline; justify-content:space-between;
+      margin-bottom:7px; gap:12px;
+    }
+    .notice-title { font-size:0.95rem; font-weight:600; color:#fff; }
+    .notice-meta  { font-size:0.72rem; color:#555; white-space:nowrap; flex-shrink:0; }
+    .notice-body  { font-size:0.85rem; color:#aaa; line-height:1.65; white-space:pre-wrap; }
+    .notice-delete {
+      background:none; border:none; color:#444; cursor:pointer;
+      font-size:0.8rem; padding:2px 6px; border-radius:5px;
+      transition:color .15s, background .15s;
+    }
+    .notice-delete:hover { color:#f87171; background:rgba(248,113,113,.1); }
+    .notice-empty { color:#444; font-size:0.88rem; padding:20px 0; text-align:center; }
+
+    /* 공지 작성 (어드민) */
+    .compose-wrap { display:none; margin-bottom:14px; }
+    .compose-wrap.visible { display:block; }
+    .compose-box {
+      background:#13151f; border:1px solid #1e3a5f; border-radius:12px;
+      padding:16px 18px; display:flex; flex-direction:column; gap:10px;
+    }
+    .compose-input, .compose-textarea {
+      background:#0f1117; border:1px solid #2a2d3a; border-radius:8px;
+      color:#e0e0e0; padding:9px 13px; font-size:0.88rem; outline:none;
+      font-family:inherit;
+    }
+    .compose-input:focus, .compose-textarea:focus { border-color:#7dd3fc; }
+    .compose-textarea { resize:vertical; min-height:80px; }
+    .compose-actions { display:flex; gap:8px; justify-content:flex-end; }
+    .btn-post {
+      background:#1e3a5f; color:#7dd3fc; border:1px solid #2563ab;
+      border-radius:8px; padding:7px 18px; font-size:0.85rem; font-weight:600;
+      cursor:pointer; transition:background .15s;
+    }
+    .btn-post:hover { background:#2563ab; }
+    .btn-add-notice {
+      display:none; align-items:center; gap:6px;
+      background:none; border:1px dashed #2a2d3a; border-radius:8px;
+      color:#555; font-size:0.82rem; padding:8px 14px; cursor:pointer;
+      transition:color .15s, border-color .15s; margin-bottom:10px;
+    }
+    .btn-add-notice:hover { color:#7dd3fc; border-color:#7dd3fc; }
+    .btn-add-notice.visible { display:flex; }
+
+    /* 기능 카드 */
+    .features { }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:14px; }
     .card {
       background:#16213e; border:1px solid #1e3a5f; border-radius:14px;
-      padding:24px; text-decoration:none; color:inherit;
-      display:flex; flex-direction:column; gap:10px;
-      transition:border-color .2s, transform .15s, box-shadow .2s; cursor:pointer;
+      padding:22px; text-decoration:none; color:inherit;
+      display:flex; flex-direction:column; gap:9px;
+      transition:border-color .2s, transform .15s, box-shadow .2s;
     }
     .card:hover { border-color:#7dd3fc; transform:translateY(-2px); box-shadow:0 6px 24px rgba(0,0,0,.4); }
-    .card-icon { font-size:1.8rem; }
-    .card-title { font-size:1rem; font-weight:600; color:#fff; }
-    .card-desc { font-size:0.82rem; color:#666; line-height:1.5; }
-    .card-badge { display:inline-block; font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:20px; width:fit-content; }
+    .card-icon  { font-size:1.7rem; }
+    .card-title { font-size:0.95rem; font-weight:600; color:#fff; }
+    .card-desc  { font-size:0.8rem; color:#666; line-height:1.5; }
+    .card-badge { display:inline-block; font-size:0.68rem; font-weight:700; padding:2px 8px; border-radius:20px; width:fit-content; }
     .badge-live { background:#14532d; color:#4ade80; }
-    .badge-soon { background:#1c1917; color:#78716c; }
   </style>
 </head>
-<body>
-<header>
-  <div class="header-left">
-    <span class="logo">📈</span>
-    <h1>Stalker Bot</h1>
-  </div>
-  <div class="user-info">
-    <img id="avatar" class="avatar" src="" alt="">
-    <span id="username" class="username"></span>
-    <a href="/auth/logout" class="logout-btn">로그아웃</a>
-  </div>
-</header>
+<body data-page="home">
 <main>
   <div class="greeting">
     <h2 id="greeting-text">안녕하세요!</h2>
-    <p>원하는 기능을 선택하세요.</p>
+    <p>원하는 기능을 선택하거나 공지사항을 확인하세요.</p>
   </div>
-  <div class="grid">
-    <a href="/chart-editor" class="card">
-      <div class="card-icon">✏️</div>
-      <div class="card-title">차트 수정</div>
-      <div class="card-desc">추세 채널을 그리고 저장합니다. 관심 종목이 상단에 표시됩니다.</div>
-      <span class="card-badge badge-live">LIVE</span>
-    </a>
-    <a href="/watchlist" class="card">
-      <div class="card-icon">⭐</div>
-      <div class="card-title">관심 종목</div>
-      <div class="card-desc">관심 종목을 추가하거나 제거합니다.</div>
-      <span class="card-badge badge-live">LIVE</span>
-    </a>
-    <a href="/alert-history" class="card">
-      <div class="card-icon">🔔</div>
-      <div class="card-title">알림 내역</div>
-      <div class="card-desc">채널 알림 발동 내역을 확인합니다.</div>
-      <span class="card-badge badge-live">LIVE</span>
-    </a>
+
+  <div class="announcements">
+    <div class="section-title">📢 공지사항</div>
+    <button class="btn-add-notice" id="btn-add-notice" onclick="toggleCompose()">＋ 공지 작성</button>
+    <div class="compose-wrap" id="compose-wrap">
+      <div class="compose-box">
+        <input  id="notice-title"   class="compose-input"    placeholder="제목" maxlength="100">
+        <textarea id="notice-body" class="compose-textarea"  placeholder="내용을 입력하세요…" maxlength="2000"></textarea>
+        <div class="compose-actions">
+          <button class="btn-post" onclick="submitNotice()">등록</button>
+        </div>
+      </div>
+    </div>
+    <div class="notice-list" id="notice-list">
+      <div class="notice-empty">공지사항이 없습니다.</div>
+    </div>
+  </div>
+
+  <div class="features">
+    <div class="section-title">🛠 기능</div>
+    <div class="grid">
+      <a href="/chart-editor" class="card">
+        <div class="card-icon">✏️</div>
+        <div class="card-title">차트 수정</div>
+        <div class="card-desc">추세 채널을 그리고 저장합니다. 관심 종목이 상단에 표시됩니다.</div>
+        <span class="card-badge badge-live">LIVE</span>
+      </a>
+      <a href="/watchlist" class="card">
+        <div class="card-icon">⭐</div>
+        <div class="card-title">관심 종목</div>
+        <div class="card-desc">관심 종목을 추가하거나 제거합니다.</div>
+        <span class="card-badge badge-live">LIVE</span>
+      </a>
+      <a href="/alert-history" class="card">
+        <div class="card-icon">🔔</div>
+        <div class="card-title">알림 내역</div>
+        <div class="card-desc">채널 알림 발동 내역을 확인합니다.</div>
+        <span class="card-badge badge-live">LIVE</span>
+      </a>
+    </div>
   </div>
 </main>
+<script src="/static/sidebar.js"></script>
 <script>
-async function load() {
-  const res = await fetch('/api/me');
-  if (!res.ok) { location.href = '/login'; return; }
-  const user = await res.json();
+let _isAdmin = false;
+
+window.__onSidebarUser = function(user) {
   document.getElementById('greeting-text').textContent = `안녕하세요, ${user.global_name}님!`;
-  document.getElementById('username').textContent = user.global_name;
-  document.getElementById('avatar').src = user.avatar
-    ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=64`
-    : `https://cdn.discordapp.com/embed/avatars/${parseInt(user.id) % 5}.png`;
+  _isAdmin = !!user.is_admin;
+  if (_isAdmin) {
+    document.getElementById('btn-add-notice').classList.add('visible');
+  }
+};
+
+function fmt(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString('ko-KR', { month:'short', day:'numeric' })
+       + ' ' + d.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' });
 }
-load();
+
+async function loadAnnouncements() {
+  const res = await fetch('/api/announcements');
+  if (!res.ok) return;
+  const list = await res.json();
+  const el = document.getElementById('notice-list');
+  if (!list.length) {
+    el.innerHTML = '<div class="notice-empty">공지사항이 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = list.map(n => `
+    <div class="notice-card" id="notice-${n.id}">
+      <div class="notice-head">
+        <span class="notice-title">${escHtml(n.title)}</span>
+        <span class="notice-meta">
+          ${escHtml(n.author_name)} · ${fmt(n.created_at)}
+          ${_isAdmin ? `<button class="notice-delete" onclick="deleteNotice(${n.id})">삭제</button>` : ''}
+        </span>
+      </div>
+      <div class="notice-body">${escHtml(n.content)}</div>
+    </div>`).join('');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleCompose() {
+  const w = document.getElementById('compose-wrap');
+  w.classList.toggle('visible');
+}
+
+async function submitNotice() {
+  const title   = document.getElementById('notice-title').value.trim();
+  const content = document.getElementById('notice-body').value.trim();
+  if (!title || !content) { alert('제목과 내용을 입력해주세요.'); return; }
+  const res = await fetch('/api/admin/announcements', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ title, content }),
+  });
+  if (!res.ok) { alert('등록 실패'); return; }
+  document.getElementById('notice-title').value = '';
+  document.getElementById('notice-body').value  = '';
+  document.getElementById('compose-wrap').classList.remove('visible');
+  loadAnnouncements();
+}
+
+async function deleteNotice(id) {
+  if (!confirm('공지를 삭제할까요?')) return;
+  await fetch(`/api/admin/announcements/${id}`, { method:'DELETE' });
+  loadAnnouncements();
+}
+
+// is_admin 정보가 /api/me에 없으면 별도로 확인
+async function checkAdmin() {
+  const res = await fetch('/api/admin/stats');
+  if (res.ok) { _isAdmin = true; document.getElementById('btn-add-notice').classList.add('visible'); }
+  loadAnnouncements();
+}
+
+checkAdmin();
 </script>
 </body>
 </html>

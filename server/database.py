@@ -102,6 +102,15 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     avatar       TEXT,
     updated_at   INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS announcements (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT    NOT NULL,
+    content     TEXT    NOT NULL,
+    author_id   TEXT    NOT NULL,
+    author_name TEXT    NOT NULL,
+    created_at  INTEGER NOT NULL
+);
 """
 
 
@@ -688,3 +697,29 @@ def get_user_alerts(user_id: str) -> list[dict]:
             ORDER BY a.fired_at DESC
         """, (user_id,)).fetchall()
         return [dict(r) for r in rows]
+
+
+# ── announcements ─────────────────────────────────────────────────────────────
+
+def get_announcements(limit: int = 20) -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM announcements ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def add_announcement(title: str, content: str, author_id: str, author_name: str) -> int:
+    now = int(time.time())
+    with _conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO announcements (title, content, author_id, author_name, created_at) VALUES (?,?,?,?,?)",
+            (title, content, author_id, author_name, now),
+        )
+        return cur.lastrowid
+
+
+def delete_announcement(announcement_id: int) -> None:
+    with _conn() as conn:
+        conn.execute("DELETE FROM announcements WHERE id = ?", (announcement_id,))
