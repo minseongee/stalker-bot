@@ -19,14 +19,18 @@
     }
     .list-item:last-child { border-bottom:none; }
     .item-left { display:flex; align-items:center; gap:12px; }
-    .side-badge {
+    .item-badge {
       display:inline-flex; align-items:center; justify-content:center;
-      width:36px; height:36px; border-radius:8px; font-size:1rem;
+      width:36px; height:36px; border-radius:8px; font-size:1rem; flex-shrink:0;
     }
     .side-upper { background:#14532d; }
     .side-lower { background:#7f1d1d; }
+    .hot-pos    { background:#1c2b1a; }
+    .hot-neg    { background:#2b1a1a; }
+    .hot-neu    { background:#1a1d27; }
     .item-name { font-size:0.9rem; font-weight:600; color:#fff; }
     .item-meta { font-size:0.75rem; color:#555; margin-top:2px; }
+    .item-headline { font-size:0.78rem; color:#777; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:380px; }
     .time { font-size:0.8rem; color:#555; white-space:nowrap; }
     .empty { text-align:center; padding:60px; color:#555; }
     .empty p { margin-bottom:6px; font-size:0.9rem; }
@@ -75,14 +79,34 @@ async function load() {
   }
 
   wrap.innerHTML = `<div class="list">${alerts.map(a => {
+    if (a.alert_type === 'hot_news') {
+      let codes = [];
+      try { codes = JSON.parse(a.stock_codes || '[]'); } catch(_) {}
+      const names = codes.map(c => STOCK_NAMES[c] || c).join(', ') || '-';
+      const dir = a.direction;
+      const badge = dir === 'positive' ? '📈' : dir === 'negative' ? '📉' : '📌';
+      const cls   = dir === 'positive' ? 'hot-pos' : dir === 'negative' ? 'hot-neg' : 'hot-neu';
+      const label = dir === 'positive' ? '상승 신호' : dir === 'negative' ? '하락 신호' : '관련 뉴스';
+      return `<div class="list-item">
+        <div class="item-left">
+          <div class="item-badge ${cls}">${badge}</div>
+          <div>
+            <div class="item-name">${escHtml(names)}</div>
+            <div class="item-meta">핫뉴스 · ${label}</div>
+            <div class="item-headline">${escHtml(a.headline || '')}</div>
+          </div>
+        </div>
+        <div class="time">${fmt(a.fired_at)}</div>
+      </div>`;
+    }
     const name = STOCK_NAMES[a.stock_code] || a.stock_code;
     const isUpper = a.side === 'upper';
     return `<div class="list-item">
       <div class="item-left">
-        <div class="side-badge ${isUpper ? 'side-upper' : 'side-lower'}">${isUpper ? '📈' : '📉'}</div>
+        <div class="item-badge ${isUpper ? 'side-upper' : 'side-lower'}">${isUpper ? '📈' : '📉'}</div>
         <div>
-          <div class="item-name">${name} (${a.stock_code})</div>
-          <div class="item-meta">${isUpper ? '상단 채널 돌파' : '하단 채널 이탈'} · ${a.channel_type}</div>
+          <div class="item-name">${escHtml(name)} (${escHtml(a.stock_code)})</div>
+          <div class="item-meta">${isUpper ? '상단 채널 돌파' : '하단 채널 이탈'} · ${escHtml(a.channel_type || '')}</div>
         </div>
       </div>
       <div class="time">${fmt(a.fired_at)}</div>

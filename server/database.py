@@ -111,6 +111,18 @@ CREATE TABLE IF NOT EXISTS announcements (
     author_name TEXT    NOT NULL,
     created_at  INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS hot_news_alerts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     TEXT    NOT NULL,
+    stock_codes TEXT    NOT NULL,
+    headline    TEXT    NOT NULL,
+    direction   TEXT    NOT NULL DEFAULT 'neutral',
+    cluster_id  TEXT,
+    fired_at    INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_hot_news_alerts_user ON hot_news_alerts (user_id, fired_at);
 """
 
 
@@ -688,15 +700,37 @@ def get_user_profile(user_id: str) -> dict | None:
 
 def get_user_alerts(user_id: str) -> list[dict]:
     with _conn() as conn:
-        rows = conn.execute("""
-            SELECT a.id, a.side, a.fired_at,
-                   c.stock_code, c.channel_type
+        channel_rows = conn.execute("""
+            SELECT a.fired_at, a.side, c.stock_code, c.channel_type,
+                   'channel' AS alert_type, NULL AS headline,
+                   NULL AS direction, NULL AS stock_codes
             FROM alerts a
             JOIN channels c ON a.channel_id = c.id
             WHERE c.user_id = ?
-            ORDER BY a.fired_at DESC
         """, (user_id,)).fetchall()
-        return [dict(r) for r in rows]
+
+        hot_rows = conn.execute("""
+            SELECT fired_at, NULL AS side, NULL AS stock_code, NULL AS channel_type,
+                   'hot_news' AS alert_type, headline, direction, stock_codes
+            FROM hot_news_alerts
+            WHERE user_id = ?
+        """, (user_id,)).fetchall()
+
+    combined = [dict(r) for r in channel_rows] + [dict(r) for r in hot_rows]
+    combined.sort(key=lambda r: r["fired_at"], reverse=True)
+    return combined
+
+
+def save_hot_news_alert(user_id: str, stock_codes: list[str],
+                        headline: str, direction: str, cluster_id: str | None = None) -> None:
+    import json
+    now = int(time.time())
+    with _conn() as conn:
+        conn.execute(
+            """INSERT INTO hot_news_alerts (user_id, stock_codes, headline, direction, cluster_id, fired_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (user_id, json.dumps(stock_codes, ensure_ascii=False), headline, direction, cluster_id, now),
+        )
 
 
 # ── announcements ─────────────────────────────────────────────────────────────

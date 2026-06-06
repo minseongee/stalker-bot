@@ -41,6 +41,7 @@ from .database import (
     get_announcements,
     add_announcement,
     delete_announcement,
+    save_hot_news_alert,
 )
 from .models import (
     ChannelAlertToggleRequest,

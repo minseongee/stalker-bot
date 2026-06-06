@@ -19,7 +19,7 @@ from server.database import (
     get_watchlist, add_to_watchlist, remove_from_watchlist,
     set_news_channel, get_news_channels_by_type,
     save_message_id, get_message_id, get_broadcast_cluster_ids,
-    get_live_setting, set_setting, get_users_watching,
+    get_live_setting, set_setting, get_users_watching, save_hot_news_alert,
 )
 from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
 
@@ -543,6 +543,13 @@ class General(commands.Cog):
             try:
                 await user.send(embed=notify_embed)
                 print(f"[관심종목알림] {user_id} → {watching_codes}")
+                save_hot_news_alert(
+                    user_id=user_id,
+                    stock_codes=watching_codes,
+                    headline=news.get("headline", ""),
+                    direction=direction,
+                    cluster_id=news.get("cluster_id"),
+                )
             except discord.Forbidden:
                 pass  # DM 차단한 유저
             except Exception as e:
