@@ -68,28 +68,13 @@
     .btn-add-notice:hover { color:#7dd3fc; border-color:#7dd3fc; }
     .btn-add-notice.visible { display:flex; }
 
-    /* 기능 카드 */
-    .features { }
-    .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:14px; }
-    .card {
-      background:#16213e; border:1px solid #1e3a5f; border-radius:14px;
-      padding:22px; text-decoration:none; color:inherit;
-      display:flex; flex-direction:column; gap:9px;
-      transition:border-color .2s, transform .15s, box-shadow .2s;
-    }
-    .card:hover { border-color:#7dd3fc; transform:translateY(-2px); box-shadow:0 6px 24px rgba(0,0,0,.4); }
-    .card-icon  { font-size:1.7rem; }
-    .card-title { font-size:0.95rem; font-weight:600; color:#fff; }
-    .card-desc  { font-size:0.8rem; color:#666; line-height:1.5; }
-    .card-badge { display:inline-block; font-size:0.68rem; font-weight:700; padding:2px 8px; border-radius:20px; width:fit-content; }
-    .badge-live { background:#14532d; color:#4ade80; }
   </style>
 </head>
 <body data-page="home">
 <main>
   <div class="greeting">
     <h2 id="greeting-text">안녕하세요!</h2>
-    <p>원하는 기능을 선택하거나 공지사항을 확인하세요.</p>
+    <p>공지사항을 확인하세요.</p>
   </div>
 
   <div class="announcements">
@@ -109,29 +94,6 @@
     </div>
   </div>
 
-  <div class="features">
-    <div class="section-title">🛠 기능</div>
-    <div class="grid">
-      <a href="/chart-editor" class="card">
-        <div class="card-icon">✏️</div>
-        <div class="card-title">차트 수정</div>
-        <div class="card-desc">추세 채널을 그리고 저장합니다. 관심 종목이 상단에 표시됩니다.</div>
-        <span class="card-badge badge-live">LIVE</span>
-      </a>
-      <a href="/watchlist" class="card">
-        <div class="card-icon">⭐</div>
-        <div class="card-title">관심 종목</div>
-        <div class="card-desc">관심 종목을 추가하거나 제거합니다.</div>
-        <span class="card-badge badge-live">LIVE</span>
-      </a>
-      <a href="/alert-history" class="card">
-        <div class="card-icon">🔔</div>
-        <div class="card-title">알림 내역</div>
-        <div class="card-desc">채널 알림 발동 내역을 확인합니다.</div>
-        <span class="card-badge badge-live">LIVE</span>
-      </a>
-    </div>
-  </div>
 </main>
 <script src="/static/sidebar.js"></script>
 <script>
