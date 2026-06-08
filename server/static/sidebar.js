@@ -140,8 +140,8 @@ const CSS = `
     a.href = '/administrator';
     a.className = 'sb-admin-link';
     a.innerHTML = '<span class="sb-nav-icon">⚙️</span>관리자 패널';
-    const userDiv = document.querySelector('#sidebar .sb-user');
-    if (userDiv) userDiv.before(a);
+    const userDiv = nav.querySelector('.sb-user');
+    if (userDiv) nav.insertBefore(a, userDiv);
   }).catch(() => {});
 
   // 유저 정보 로드
