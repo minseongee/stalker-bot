@@ -147,9 +147,7 @@ const CSS = `
     document.getElementById('sb-avatar').src = user.avatar
       ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=64`
       : `https://cdn.discordapp.com/embed/avatars/${parseInt(user.id) % 5}.png`;
+    if (user.is_admin) document.getElementById('sb-admin-link').classList.add('visible');
     if (typeof window.__onSidebarUser === 'function') window.__onSidebarUser(user);
-    fetch('/api/admin/stats').then(r => {
-      if (r.ok) document.getElementById('sb-admin-link').classList.add('visible');
-    });
   });
 })();

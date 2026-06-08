@@ -165,14 +165,7 @@ async function deleteNotice(id) {
   loadAnnouncements();
 }
 
-// is_admin 정보가 /api/me에 없으면 별도로 확인
-async function checkAdmin() {
-  const res = await fetch('/api/admin/stats');
-  if (res.ok) { _isAdmin = true; document.getElementById('btn-add-notice').classList.add('visible'); }
-  loadAnnouncements();
-}
-
-checkAdmin();
+loadAnnouncements();
 </script>
 </body>
 </html>

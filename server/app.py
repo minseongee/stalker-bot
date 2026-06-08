@@ -207,7 +207,7 @@ def api_me(request: Request):
     user = request.session.get("user")
     if not user:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-    return user
+    return {**user, "is_admin": user["id"] in ADMIN_USER_IDS}
 
 
 # ── 관리자 페이지 ──────────────────────────────────────────────────────────────
