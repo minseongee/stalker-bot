@@ -83,7 +83,7 @@ const CSS = `
   }
   .sb-logout:hover { color:var(--text); border-color:#444; }
   .sb-admin-link {
-    display:none; align-items:center; gap:10px;
+    display:flex; align-items:center; gap:10px;
     padding:10px 18px; text-decoration:none;
     color:#f59e0b; font-size:0.88rem;
     border-left:3px solid transparent;
@@ -91,7 +91,6 @@ const CSS = `
     transition:background .15s, color .15s;
   }
   .sb-admin-link:hover { background:rgba(245,158,11,.08); }
-  .sb-admin-link.visible { display:flex; }
 
   /* ── 페이지 컨텐츠 래퍼 ── */
   #page-wrap { flex:1; overflow-y:auto; min-width:0; }
@@ -120,9 +119,6 @@ const CSS = `
           ${n.label}
         </a>`).join('')}
     </div>
-    <a id="sb-admin-link" class="sb-admin-link" href="/administrator">
-      <span class="sb-nav-icon">⚙️</span>관리자 패널
-    </a>
     <div class="sb-user">
       <img id="sb-avatar" class="sb-avatar" src="" alt="">
       <span id="sb-username" class="sb-username">...</span>
@@ -137,9 +133,15 @@ const CSS = `
   document.body.appendChild(nav);
   document.body.appendChild(wrap);
 
-  // 관리자 링크
+  // 관리자 링크 — 200이면 sb-user 바로 위에 삽입
   fetch('/api/admin/stats').then(r => {
-    if (r.ok) document.getElementById('sb-admin-link').classList.add('visible');
+    if (!r.ok) return;
+    const a = document.createElement('a');
+    a.href = '/administrator';
+    a.className = 'sb-admin-link';
+    a.innerHTML = '<span class="sb-nav-icon">⚙️</span>관리자 패널';
+    const userDiv = document.querySelector('#sidebar .sb-user');
+    if (userDiv) userDiv.before(a);
   }).catch(() => {});
 
   // 유저 정보 로드
