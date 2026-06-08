@@ -26,12 +26,35 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 
 def assign_clusters(items: list[dict]) -> list[dict]:
     """
-    items: DB에서 가져온 기사 dicts (published_at, title, guid 필드 필요).
-    각 item에 cluster_id를 할당해 반환.
+    items: DB에서 가져온 기사 dicts (published_at, title, guid, cluster_id 필드 필요).
+    이미 cluster_id가 할당된 기사는 기존 ID를 보존하고,
+    새 기사(cluster_id 없음)만 기존 클러스터에 매칭하거나 새 클러스터를 생성한다.
     """
-    clusters: list[dict] = []  # [{id, tokens, latest_ts}]
+    cluster_map: dict[str, dict] = {}  # cluster_id → {id, tokens, latest_ts, items}
 
+    # 1) 기존 cluster_id로 클러스터 씨드 초기화
+    for item in items:
+        cid = item.get("cluster_id")
+        if not cid:
+            continue
+        if cid not in cluster_map:
+            cluster_map[cid] = {
+                "id":        cid,
+                "tokens":    set(),
+                "latest_ts": 0,
+                "items":     [],
+            }
+        cluster_map[cid]["tokens"]    |= _normalize(item["title"])
+        cluster_map[cid]["latest_ts"]  = max(cluster_map[cid]["latest_ts"], item["published_at"])
+        cluster_map[cid]["items"].append(item["guid"])
+
+    clusters = list(cluster_map.values())
+
+    # 2) 새 기사만 기존/신규 클러스터에 할당
     for item in sorted(items, key=lambda x: x["published_at"]):
+        if item.get("cluster_id"):
+            continue  # 이미 배정된 기사는 건너뜀
+
         tokens = _normalize(item["title"])
         best_id = None
         best_score = 0.0
@@ -47,7 +70,7 @@ def assign_clusters(items: list[dict]) -> list[dict]:
         if best_score >= CLUSTER_SIMILARITY_THRESHOLD and best_id is not None:
             for cl in clusters:
                 if cl["id"] == best_id:
-                    cl["tokens"] |= tokens
+                    cl["tokens"]   |= tokens
                     cl["latest_ts"] = max(cl["latest_ts"], item["published_at"])
                     cl["items"].append(item["guid"])
                     break
