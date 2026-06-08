@@ -62,6 +62,10 @@ const STOCK_NAMES = {
   '051910':'LG화학','006400':'삼성SDI'
 };
 
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 async function load() {
   const res = await fetch('/api/me/alerts');
   if (!res.ok) { location.href = '/login'; return; }
