@@ -98,7 +98,15 @@ app.add_middleware(
 )
 
 _STATIC = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=_STATIC), name="static")
+app.mount("/static", StaticFiles(directory=_STATIC, html=False), name="static")
+
+
+@app.middleware("http")
+async def no_cache_static(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
 
 
 # ── Discord OAuth2 ─────────────────────────────────────────────────────────────
