@@ -137,6 +137,11 @@ const CSS = `
   document.body.appendChild(nav);
   document.body.appendChild(wrap);
 
+  // 관리자 링크
+  fetch('/api/admin/stats').then(r => {
+    if (r.ok) document.getElementById('sb-admin-link').classList.add('visible');
+  }).catch(() => {});
+
   // 유저 정보 로드
   fetch('/api/me').then(r => {
     if (!r.ok) { location.href = '/login'; return null; }
@@ -147,7 +152,6 @@ const CSS = `
     document.getElementById('sb-avatar').src = user.avatar
       ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=64`
       : `https://cdn.discordapp.com/embed/avatars/${parseInt(user.id) % 5}.png`;
-    if (user.is_admin) document.getElementById('sb-admin-link').classList.add('visible');
     if (typeof window.__onSidebarUser === 'function') window.__onSidebarUser(user);
   });
 })();

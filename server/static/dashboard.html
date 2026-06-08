@@ -165,7 +165,15 @@ async function deleteNotice(id) {
   loadAnnouncements();
 }
 
-loadAnnouncements();
+async function checkAdmin() {
+  const res = await fetch('/api/admin/stats');
+  if (res.ok) {
+    _isAdmin = true;
+    document.getElementById('btn-add-notice').classList.add('visible');
+  }
+  loadAnnouncements();
+}
+checkAdmin();
 </script>
 </body>
 </html>
