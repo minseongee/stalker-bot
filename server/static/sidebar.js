@@ -82,6 +82,16 @@ const CSS = `
     transition:color .15s, border-color .15s;
   }
   .sb-logout:hover { color:var(--text); border-color:#444; }
+  .sb-admin-link {
+    display:none; align-items:center; gap:10px;
+    padding:10px 18px; text-decoration:none;
+    color:#f59e0b; font-size:0.88rem;
+    border-left:3px solid transparent;
+    border-top:1px solid var(--border);
+    transition:background .15s, color .15s;
+  }
+  .sb-admin-link:hover { background:rgba(245,158,11,.08); }
+  .sb-admin-link.visible { display:flex; }
 
   /* ── 페이지 컨텐츠 래퍼 ── */
   #page-wrap { flex:1; overflow-y:auto; min-width:0; }
@@ -110,6 +120,9 @@ const CSS = `
           ${n.label}
         </a>`).join('')}
     </div>
+    <a id="sb-admin-link" class="sb-admin-link" href="/administrator">
+      <span class="sb-nav-icon">⚙️</span>관리자 패널
+    </a>
     <div class="sb-user">
       <img id="sb-avatar" class="sb-avatar" src="" alt="">
       <span id="sb-username" class="sb-username">...</span>
@@ -135,5 +148,8 @@ const CSS = `
       ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=64`
       : `https://cdn.discordapp.com/embed/avatars/${parseInt(user.id) % 5}.png`;
     if (typeof window.__onSidebarUser === 'function') window.__onSidebarUser(user);
+    fetch('/api/admin/stats').then(r => {
+      if (r.ok) document.getElementById('sb-admin-link').classList.add('visible');
+    });
   });
 })();
