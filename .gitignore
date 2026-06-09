@@ -13,3 +13,6 @@ __pycache__/
 
 # Claude
 .claude/
+
+# 자동 생성
+.understand-anything/
