@@ -168,5 +168,8 @@ async def get_candles_range(code: str, days: int) -> list[dict] | None:
     if not pages:
         return None
     merged = [c for page in pages for c in page]
-    mapped = [_map_candle(c) for c in merged]
-    return mapped[-days:] if len(mapped) > days else mapped
+    deduped: dict[str, dict] = {}
+    for c in merged:
+        deduped.setdefault(c["timestamp"], c)
+    mapped = [_map_candle(c) for c in deduped.values()]
+    return mapped[-days:]

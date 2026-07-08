@@ -235,3 +235,55 @@ async def test_get_candles_range_paginates_until_enough_days(monkeypatch):
     assert len(result) == 250
     # 오름차순(과거 → 최근)으로 정렬되어 있어야 함
     assert result[0]["time"] < result[-1]["time"]
+
+
+@pytest.mark.asyncio
+async def test_get_candles_range_dedupes_inclusive_cursor_boundary(monkeypatch):
+    """
+    Test deduplication of boundary candles when API cursor is inclusive.
+    If the "before" cursor parameter is inclusive, the next page might include
+    a candle with the same timestamp as the previous page's oldest candle.
+    This test verifies that duplicate timestamps are removed.
+    """
+    monkeypatch.setattr(toss_api, "_token", "tok")
+    monkeypatch.setattr(toss_api, "_token_expires_at", time.monotonic() + 100)
+
+    def _candle(day: str, price: float) -> dict:
+        return {
+            "timestamp": f"{day}T00:00:00Z", "openPrice": str(price), "highPrice": str(price),
+            "lowPrice": str(price), "closePrice": str(price), "volume": "100", "currency": "KRW",
+        }
+
+    # Page 1 (most recent): 200 candles (full page, triggers pagination)
+    page1 = [_candle(f"2026-{(200 - i) // 28 + 1:02d}-{(200 - i) % 28 + 1:02d}", 100 + i) for i in range(200)]
+
+    # Page 2 (older): 40 candles (less than 200, stops pagination)
+    page2_base = [_candle(f"2025-{(40 - i) // 28 + 1:02d}-{(40 - i) % 28 + 1:02d}", 300 + i) for i in range(40)]
+
+    # Simulate inclusive cursor: add a duplicate of page1[0] at the end of page2
+    # (page1[0] is the oldest candle in page1, so it's the boundary for the next fetch)
+    boundary_timestamp = page1[0]["timestamp"]
+    page2_dup = _candle(boundary_timestamp[:-10], 100)  # Same timestamp as page1[0]
+    page2 = page2_base + [page2_dup]
+
+    pages = iter([page1, page2])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        candles = next(pages)
+        return httpx.Response(200, json={"result": {"candles": candles, "nextBefore": None}})
+
+    monkeypatch.setattr(toss_api, "_make_client", _mock_client_factory(handler))
+
+    result = await toss_api.get_candles_range("005930", days=200)
+
+    # Total before dedup: 200 (page1) + 41 (page2_base + dup) = 241
+    # After dedup: 240 unique candles (1 duplicate removed)
+    # Request 200 days: should return last 200
+    assert len(result) == 200
+
+    # Verify no duplicate timestamps
+    times = [c["time"] for c in result]
+    assert len(times) == len(set(times)), "Found duplicate timestamps in result"
+
+    # Verify ascending order (oldest first)
+    assert times == sorted(times)
