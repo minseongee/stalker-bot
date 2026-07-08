@@ -15,6 +15,8 @@
       font-size:0.9rem; outline:none;
     }
     .search-input:focus { border-color:#7dd3fc; }
+    .add-wrap { display:flex; gap:8px; margin-bottom:16px; }
+    .add-wrap .search-input { flex:1; }
 
     .list { background:#16213e; border:1px solid #1e3a5f; border-radius:12px; overflow:hidden; }
     .list-item {
@@ -57,7 +59,11 @@
 <main>
   <div class="page-title">✏️ 차트 수정</div>
   <div class="search-wrap">
-    <input class="search-input" id="search" placeholder="종목명 또는 코드 검색…" oninput="render()">
+    <input class="search-input" id="search" placeholder="내 목록에서 검색…" oninput="render()">
+  </div>
+  <div class="add-wrap">
+    <input class="search-input" id="direct-code" placeholder="종목코드로 바로 열기 (예: 005930)" maxlength="6">
+    <button class="edit-btn" onclick="openDirect()">✏️ 열기</button>
   </div>
   <div id="list-wrap"><div class="loading">불러오는 중…</div></div>
 </main>
@@ -87,7 +93,7 @@ function render() {
 
   let html = '<div class="list">';
   if (wl.length && !q) html += `<div class="section-header">⭐ 관심 종목</div>${wl.map(row).join('')}`;
-  if (wl.length && !q && rest.length) html += `<div class="section-header">전체 종목</div>`;
+  if (wl.length && !q && rest.length) html += `<div class="section-header">채널 등록 종목</div>`;
   html += rest.map(row).join('');
   if (q) html = '<div class="list">' + filtered.map(row).join('');
   html += '</div>';
@@ -113,16 +119,24 @@ function row(s) {
 }
 
 async function openEditor(code, name, btn) {
-  btn.disabled = true;
-  btn.textContent = '로딩 중…';
+  if (btn) { btn.disabled = true; btn.textContent = '로딩 중…'; }
   try {
     const res = await fetch(`/api/me/editor-token?code=${code}`);
     const data = await res.json();
     window.open(data.editor_url, '_blank');
   } finally {
-    btn.disabled = false;
-    btn.textContent = '✏️ 차트수정';
+    if (btn) { btn.disabled = false; btn.textContent = '✏️ 차트수정'; }
   }
+}
+
+function openDirect() {
+  const input = document.getElementById('direct-code');
+  const code = input.value.trim();
+  if (!/^\d{6}$/.test(code)) {
+    alert('6자리 종목코드를 입력해주세요.');
+    return;
+  }
+  openEditor(code, code, null);
 }
 
 load();
