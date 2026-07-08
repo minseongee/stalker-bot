@@ -14,14 +14,15 @@ from utils.summarizer import (
     _build_hot_news_embeds,
     summarize_market_briefing,
 )
-from utils.chart import fetch_chart, supported_codes
+from utils.chart import fetch_chart
+from utils.toss_api import get_stock_info, get_stock_name
 from server.database import (
     get_watchlist, add_to_watchlist, remove_from_watchlist,
     set_news_channel, get_news_channels_by_type,
     save_message_id, get_message_id, get_broadcast_cluster_ids,
     get_live_setting, set_setting, get_users_watching, save_hot_news_alert,
 )
-from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
+from server.ohlcv import gen_ohlcv
 
 
 SERVER_URL    = os.getenv("SERVER_URL", "http://localhost:8000")
@@ -49,18 +50,18 @@ def _build_dashboard_embed() -> discord.Embed:
     return embed
 
 
-def _build_watchlist_embed(user_id: str) -> discord.Embed:
+async def _build_watchlist_embed(user_id: str) -> discord.Embed:
     codes = get_watchlist(user_id)
     embed = discord.Embed(title="⭐ 내 관심 종목", color=discord.Color.gold())
     if not codes:
         embed.description = "관심 종목이 없습니다.\n**[➕ 추가]** 버튼으로 종목을 추가해보세요!"
         return embed
     for code in codes:
-        info = DUMMY_STOCKS.get(code)
-        if not info:
+        name = await get_stock_name(code)
+        if not name:
             continue
-        data = gen_ohlcv(code, days=2)
-        if len(data) < 2:
+        data = await gen_ohlcv(code, days=2)
+        if not data or len(data) < 2:
             continue
         last, prev = data[-1], data[-2]
         change     = last["close"] - prev["close"]
@@ -68,12 +69,17 @@ def _build_watchlist_embed(user_id: str) -> discord.Embed:
         sign  = "▲" if change >= 0 else "▼"
         arrow = "📈" if change >= 0 else "📉"
         embed.add_field(
-            name=f"{arrow} {info['name']} ({code})",
+            name=f"{arrow} {name} ({code})",
             value=f"**{last['close']:,}원** {sign} {change:+,}원 ({change_pct:+.2f}%)",
             inline=False,
         )
-    embed.set_footer(text="⚠️ 목업 데이터 — 한국투자증권 API 연동 예정")
     return embed
+
+
+async def _make_watchlist_view(user_id: str) -> "WatchlistView":
+    codes = get_watchlist(user_id)
+    names = await get_stock_info(codes) if codes else {}
+    return WatchlistView(user_id, names)
 
 
 def _build_hot_embed(news: dict) -> discord.Embed:
@@ -151,7 +157,7 @@ async def _send_chart(interaction: discord.Interaction, code: str) -> None:
         return
     if result is None:
         await interaction.followup.send(
-            f"❌ `{code}` 종목을 찾을 수 없습니다.\n\n**지원 종목**\n{supported_codes()}",
+            f"❌ `{code}` 종목을 찾을 수 없습니다. 종목코드를 다시 확인해주세요.",
             ephemeral=True,
         )
         return
@@ -169,7 +175,6 @@ async def _send_chart(interaction: discord.Interaction, code: str) -> None:
     embed.add_field(name="저가",   value=f"{info['low']:,}원",    inline=True)
     embed.add_field(name="거래량", value=f"{info['volume']:,}",   inline=True)
     embed.set_image(url="attachment://chart.png")
-    embed.set_footer(text="⚠️ 목업 데이터 — 한국투자증권 API 연동 예정")
     await interaction.followup.send(
         embed=embed,
         file=discord.File(buf, filename="chart.png"),
@@ -217,7 +222,7 @@ class ChartResultView(discord.ui.View):
 
     async def _toggle_watchlist(self, interaction: discord.Interaction):
         uid  = str(interaction.user.id)
-        name = DUMMY_STOCKS.get(self.stock_code, {}).get("name", self.stock_code)
+        name = await get_stock_name(self.stock_code) or self.stock_code
         if self.stock_code in get_watchlist(uid):
             remove_from_watchlist(uid, self.stock_code)
             msg = f"★ **{name}** ({self.stock_code})을 관심 종목에서 제거했습니다."
@@ -272,12 +277,13 @@ class WatchlistAddView(discord.ui.View):
 # ── 관심 종목 삭제 View (Select Menu) ─────────────────────────────────────────
 
 class WatchlistRemoveView(discord.ui.View):
-    def __init__(self, user_id: str, codes: list[str]):
+    def __init__(self, user_id: str, codes: list[str], names: dict[str, dict] | None = None):
         super().__init__(timeout=120)
         self.user_id = user_id
+        names = names or {}
         options = [
             discord.SelectOption(
-                label=f"{DUMMY_STOCKS.get(c, {}).get('name', c)} ({c})",
+                label=f"{names.get(c, {}).get('name', c)} ({c})",
                 value=c,
             )
             for c in codes
@@ -289,27 +295,28 @@ class WatchlistRemoveView(discord.ui.View):
     async def _on_select(self, interaction: discord.Interaction):
         code = interaction.data["values"][0]
         remove_from_watchlist(self.user_id, code)
-        embed = _build_watchlist_embed(self.user_id)
-        await interaction.response.edit_message(embed=embed, view=WatchlistView(self.user_id))
+        embed = await _build_watchlist_embed(self.user_id)
+        await interaction.response.edit_message(embed=embed, view=await _make_watchlist_view(self.user_id))
 
     @discord.ui.button(label="← 취소", style=discord.ButtonStyle.secondary, row=1)
     async def cancel(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        embed = _build_watchlist_embed(self.user_id)
-        await interaction.response.edit_message(embed=embed, view=WatchlistView(self.user_id))
+        embed = await _build_watchlist_embed(self.user_id)
+        await interaction.response.edit_message(embed=embed, view=await _make_watchlist_view(self.user_id))
 
 
 # ── 관심 종목 메인 View ───────────────────────────────────────────────────────
 
 class WatchlistView(discord.ui.View):
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: str, names: dict[str, dict] | None = None):
         super().__init__(timeout=None)
         self.user_id = user_id
 
         codes = get_watchlist(user_id)
         if codes:
+            names = names or {}
             options = [
                 discord.SelectOption(
-                    label=f"{DUMMY_STOCKS.get(c, {}).get('name', c)} ({c})",
+                    label=f"{names.get(c, {}).get('name', c)} ({c})",
                     value=c,
                     emoji="📊",
                 )
@@ -355,22 +362,23 @@ class WatchlistView(discord.ui.View):
         codes = get_watchlist(str(interaction.user.id))
         if not codes:
             await interaction.response.edit_message(
-                embed=_build_watchlist_embed(str(interaction.user.id)),
+                embed=await _build_watchlist_embed(str(interaction.user.id)),
                 view=self,
             )
             return
+        names = await get_stock_info(codes)
         embed = discord.Embed(
             title="➖ 관심 종목 삭제",
             description="삭제할 종목을 선택하세요.",
             color=discord.Color.red(),
         )
         await interaction.response.edit_message(
-            embed=embed, view=WatchlistRemoveView(str(interaction.user.id), codes)
+            embed=embed, view=WatchlistRemoveView(str(interaction.user.id), codes, names)
         )
 
     @discord.ui.button(label="🔄 새로고침", style=discord.ButtonStyle.secondary)
     async def refresh(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        embed = _build_watchlist_embed(str(interaction.user.id))
+        embed = await _build_watchlist_embed(str(interaction.user.id))
         await interaction.response.edit_message(embed=embed, view=self)
 
 
@@ -386,9 +394,10 @@ class StockView(discord.ui.View):
 
     @discord.ui.button(label="관심 종목", style=discord.ButtonStyle.secondary, emoji="⭐", custom_id="stock:watchlist")
     async def watchlist(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        embed = _build_watchlist_embed(str(interaction.user.id))
+        uid = str(interaction.user.id)
+        embed = await _build_watchlist_embed(uid)
         await interaction.response.send_message(
-            embed=embed, view=WatchlistView(str(interaction.user.id)), ephemeral=True
+            embed=embed, view=await _make_watchlist_view(uid), ephemeral=True
         )
 
 
@@ -530,8 +539,8 @@ class General(commands.Cog):
             except Exception:
                 continue
 
-            from server.ohlcv import DUMMY_STOCKS
-            names = [DUMMY_STOCKS.get(c, {}).get("name", c) for c in watching_codes]
+            info_map = await get_stock_info(watching_codes)
+            names = [info_map.get(c, {}).get("name", c) for c in watching_codes]
             stock_str = ", ".join(f"**{n}**({c})" for n, c in zip(names, watching_codes))
 
             notify_embed = discord.Embed(
