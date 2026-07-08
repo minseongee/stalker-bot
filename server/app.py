@@ -15,7 +15,8 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from .ohlcv import gen_ohlcv, DUMMY_STOCKS
+from .ohlcv import gen_ohlcv
+from utils.toss_api import get_stock_info
 from .database import (
     get_watchlist,
     upsert_user_profile,
@@ -364,12 +365,16 @@ def alert_history_page(request: Request):
 
 
 @app.post("/api/me/watchlist/{code}")
-def api_watchlist_add(code: str, request: Request):
+async def api_watchlist_add(code: str, request: Request):
     user = request.session.get("user")
     if not user:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-    add_to_watchlist(user["id"], code.upper())
-    return {"ok": True}
+    code = code.upper()
+    info = await get_stock_info([code])
+    if code not in info:
+        raise HTTPException(status_code=404, detail=f"{code} 종목을 찾을 수 없습니다.")
+    add_to_watchlist(user["id"], code)
+    return {"ok": True, "name": info[code].get("name", code)}
 
 
 @app.delete("/api/me/watchlist/{code}")
@@ -398,29 +403,7 @@ def chart_editor_list_page(request: Request):
 
 
 @app.get("/api/me/stocks-all")
-def api_me_stocks_all(request: Request):
-    user = request.session.get("user")
-    if not user:
-        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
-    user_id = user["id"]
-    watchlist = get_watchlist(user_id)
-    channels  = get_channels(user_id)
-    wl_set = set(watchlist)
-    ch_set = set(c["stock_code"] for c in channels)
-    result = []
-    # 관심종목 먼저
-    for code in watchlist:
-        info = DUMMY_STOCKS.get(code, {})
-        result.append({"code": code, "name": info.get("name", code), "in_watchlist": True, "has_channel": code in ch_set})
-    # 전체 종목 (관심종목 제외)
-    for code, info in DUMMY_STOCKS.items():
-        if code not in wl_set:
-            result.append({"code": code, "name": info.get("name", code), "in_watchlist": False, "has_channel": code in ch_set})
-    return result
-
-
-@app.get("/api/me/stocks")
-def api_me_stocks(request: Request):
+async def api_me_stocks_all(request: Request):
     user = request.session.get("user")
     if not user:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
@@ -429,14 +412,19 @@ def api_me_stocks(request: Request):
     channels  = get_channels(user_id)
     channel_codes = list(dict.fromkeys(c["stock_code"] for c in channels))
     wl_set = set(watchlist)
+    ch_set = set(channel_codes)
+
+    all_codes = list(dict.fromkeys(watchlist + channel_codes))
+    names = await get_stock_info(all_codes) if all_codes else {}
+
     result = []
     for code in watchlist:
-        info = DUMMY_STOCKS.get(code, {})
-        result.append({"code": code, "name": info.get("name", code), "in_watchlist": True})
+        name = names.get(code, {}).get("name", code)
+        result.append({"code": code, "name": name, "in_watchlist": True, "has_channel": code in ch_set})
     for code in channel_codes:
         if code not in wl_set:
-            info = DUMMY_STOCKS.get(code, {})
-            result.append({"code": code, "name": info.get("name", code), "in_watchlist": False})
+            name = names.get(code, {}).get("name", code)
+            result.append({"code": code, "name": name, "in_watchlist": False, "has_channel": True})
     return result
 
 
@@ -482,8 +470,8 @@ def news_dashboard(request: Request, limit: int = Query(default=200, le=1000), h
 
 
 @app.get("/ohlcv/{code}")
-def ohlcv(code: str, days: int = 90):
-    data = gen_ohlcv(code.upper(), days)
+async def ohlcv(code: str, days: int = 90):
+    data = await gen_ohlcv(code.upper(), days)
     if data is None:
         raise HTTPException(status_code=404, detail=f"{code} 종목을 찾을 수 없습니다.")
     return data
