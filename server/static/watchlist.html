@@ -14,6 +14,9 @@
       font-size:0.9rem; outline:none; font-family:inherit;
     }
     .search-input:focus { border-color:#7dd3fc; }
+    .add-wrap { display:flex; gap:8px; margin-bottom:8px; }
+    .add-wrap .search-input { flex:1; }
+    .add-error { color:#ef5350; font-size:0.8rem; margin-bottom:14px; min-height:1em; }
     .list { background:#16213e; border:1px solid #1e3a5f; border-radius:12px; overflow:hidden; }
     .list-item {
       display:flex; align-items:center; justify-content:space-between;
@@ -47,8 +50,13 @@
 <main>
   <div class="page-title">⭐ 관심 종목</div>
   <div class="search-wrap">
-    <input class="search-input" id="search" placeholder="종목명 또는 코드 검색…" oninput="render()">
+    <input class="search-input" id="search" placeholder="내 목록에서 검색…" oninput="render()">
   </div>
+  <div class="add-wrap">
+    <input class="search-input" id="add-code" placeholder="종목코드 입력 후 추가 (예: 005930)" maxlength="6">
+    <button class="toggle-btn off" id="add-btn" onclick="addByCode()">⭐ 추가</button>
+  </div>
+  <div id="add-error" class="add-error"></div>
   <div id="list-wrap"><div class="loading">불러오는 중…</div></div>
 </main>
 <script src="/static/sidebar.js"></script>
@@ -73,7 +81,7 @@ function render() {
   const rest = filtered.filter(s => !s.in_watchlist);
   let html = '<div class="list">';
   if (wl.length && !q) html += `<div class="section-header">⭐ 관심 종목 (${wl.length})</div>${wl.map(row).join('')}`;
-  if (!q && wl.length && rest.length) html += `<div class="section-header">전체 종목</div>`;
+  if (!q && wl.length && rest.length) html += `<div class="section-header">채널 등록 종목</div>`;
   const listItems = q ? filtered : rest;
   html += listItems.map(row).join('') + '</div>';
   document.getElementById('list-wrap').innerHTML = html;
@@ -93,6 +101,38 @@ function row(s) {
       ${on ? '★ 제거' : '⭐ 추가'}
     </button>
   </div>`;
+}
+
+async function addByCode() {
+  const input = document.getElementById('add-code');
+  const errBox = document.getElementById('add-error');
+  const btn = document.getElementById('add-btn');
+  const code = input.value.trim();
+  errBox.textContent = '';
+  if (!/^\d{6}$/.test(code)) {
+    errBox.textContent = '6자리 종목코드를 입력해주세요.';
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/me/watchlist/${code}`, { method: 'POST' });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      errBox.textContent = data.detail || '종목을 찾을 수 없습니다.';
+      return;
+    }
+    const data = await res.json();
+    input.value = '';
+    const existing = stocks.find(s => s.code === code);
+    if (existing) {
+      existing.in_watchlist = true;
+    } else {
+      stocks.push({ code, name: data.name || code, in_watchlist: true, has_channel: false });
+    }
+    render();
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function toggle(code, btn) {
