@@ -10,7 +10,7 @@ from server.database import (
     init_db,
     record_alert,
 )
-from utils.toss_api import get_prices, get_stock_info, TossAPIError
+from utils.toss_api import get_prices, get_stock_info
 
 POLL_MINUTES = 5
 
@@ -65,7 +65,7 @@ class Worker(commands.Cog):
         try:
             prices = await get_prices(codes)
             names = await get_stock_info(codes)
-        except TossAPIError as e:
+        except Exception as e:
             print(f"[워커] 시세 조회 실패, 이번 주기는 건너뜁니다: {e}")
             return
         for ch in channels:
