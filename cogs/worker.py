@@ -10,7 +10,7 @@ from server.database import (
     init_db,
     record_alert,
 )
-from server.ohlcv import DUMMY_STOCKS, gen_ohlcv
+from utils.toss_api import get_prices, get_stock_info, TossAPIError
 
 POLL_MINUTES = 5
 
@@ -19,14 +19,6 @@ FIB_LEVEL_COLORS = {
     0: 0x9e9e9e, 0.5: 0xef5350, 1: 0xff9800, 1.5: 0xffeb3b,
     2: 0x4caf50, 2.5: 0x29b6f6, 3: 0x3f51b5, 3.5: 0x9c27b0,
 }
-
-
-def _current_price(stock_code: str) -> float | None:
-    """현재 가격 반환. 실제 API 연동 전까지는 더미 데이터 마지막 종가 사용."""
-    data = gen_ohlcv(stock_code, days=2)
-    if not data:
-        return None
-    return float(data[-1]["close"])
 
 
 def _normal_bounds_now(ch: dict) -> tuple[float, float] | None:
@@ -66,23 +58,33 @@ class Worker(commands.Cog):
 
     @tasks.loop(minutes=POLL_MINUTES)
     async def poll(self):
-        for ch in get_all_channels():
-            await self._check(ch)
+        channels = get_all_channels()
+        if not channels:
+            return
+        codes = list({ch["stock_code"] for ch in channels})
+        try:
+            prices = await get_prices(codes)
+            names = await get_stock_info(codes)
+        except TossAPIError as e:
+            print(f"[워커] 시세 조회 실패, 이번 주기는 건너뜁니다: {e}")
+            return
+        for ch in channels:
+            price_info = prices.get(ch["stock_code"])
+            if price_info is None:
+                continue
+            name = names.get(ch["stock_code"], {}).get("name", ch["stock_code"])
+            await self._check(ch, price_info["price"], name)
 
-    async def _check(self, ch: dict):
+    async def _check(self, ch: dict, price: float, name: str):
         if not ch.get("alert_enabled", 1):
             return
         if ch.get("channel_type") == "fib":
-            await self._check_fib(ch)
+            await self._check_fib(ch, price, name)
         else:
-            await self._check_normal(ch)
+            await self._check_normal(ch, price, name)
 
-    async def _check_normal(self, ch: dict):
-        code  = ch["stock_code"]
-        price = _current_price(code)
-        if price is None:
-            return
-
+    async def _check_normal(self, ch: dict, price: float, name: str):
+        code = ch["stock_code"]
         bounds = _normal_bounds_now(ch)
         if bounds is None:
             return
@@ -93,7 +95,6 @@ class Worker(commands.Cog):
             return
 
         ch_id = ch["id"]
-        name  = DUMMY_STOCKS.get(code, {}).get("name", code)
 
         # 상단선 상향 돌파
         if price >= upper:
@@ -107,12 +108,8 @@ class Worker(commands.Cog):
                 record_alert(ch_id, "lower")
                 await self._send_normal_alert(user, name, code, price, lower, "lower")
 
-    async def _check_fib(self, ch: dict):
-        code  = ch["stock_code"]
-        price = _current_price(code)
-        if price is None:
-            return
-
+    async def _check_fib(self, ch: dict, price: float, name: str):
+        code = ch["stock_code"]
         levels = _fib_level_prices_now(ch)
         if levels is None:
             return
@@ -122,8 +119,6 @@ class Worker(commands.Cog):
             return
 
         ch_id = ch["id"]
-        name  = DUMMY_STOCKS.get(code, {}).get("name", code)
-
         for level, level_price in levels:
             side = f"fib_{level}"
             if price >= level_price and not already_alerted(ch_id, side):
@@ -161,7 +156,7 @@ class Worker(commands.Cog):
         embed.add_field(name="현재가",      value=f"**{price:,.0f}원**",   inline=True)
         embed.add_field(name="채널선 가격", value=f"{line_price:,.0f}원",  inline=True)
         embed.add_field(name="이탈 폭",     value=diff_str,                inline=True)
-        embed.set_footer(text="⚠️ 목업 데이터 | 쿨타임 1시간")
+        embed.set_footer(text="쿨타임 1시간")
         try:
             await user.send(embed=embed)
         except discord.Forbidden:
@@ -188,7 +183,7 @@ class Worker(commands.Cog):
         embed.add_field(name="현재가",      value=f"**{price:,.0f}원**",   inline=True)
         embed.add_field(name="레벨 가격",   value=f"{level_price:,.0f}원", inline=True)
         embed.add_field(name="돌파 폭",     value=f"+{diff:,.0f}원",       inline=True)
-        embed.set_footer(text="⚠️ 목업 데이터 | 쿨타임 1시간")
+        embed.set_footer(text="쿨타임 1시간")
         try:
             await user.send(embed=embed)
         except discord.Forbidden:
