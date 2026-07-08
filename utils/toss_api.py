@@ -112,3 +112,61 @@ async def get_prices(codes: list[str]) -> dict[str, dict]:
                 "timestamp": item["timestamp"],
             }
     return result
+
+
+def _map_candle(raw: dict) -> dict:
+    return {
+        "time": raw["timestamp"][:10],
+        "open": round(float(raw["openPrice"])),
+        "high": round(float(raw["highPrice"])),
+        "low": round(float(raw["lowPrice"])),
+        "close": round(float(raw["closePrice"])),
+        "volume": int(float(raw["volume"])),
+    }
+
+
+async def _fetch_raw_candles(
+    code: str, interval: str, count: int, before: str | None = None,
+) -> list[dict] | None:
+    params: dict = {"symbol": code, "interval": interval, "count": count}
+    if before:
+        params["before"] = before
+    try:
+        data = await _authed_get("/api/v1/candles", params)
+    except TossAPIError as e:
+        if e.status_code == 404:
+            return None
+        raise
+    candles = data.get("result", {}).get("candles", [])
+    if not candles:
+        return None
+    return sorted(candles, key=lambda c: c["timestamp"])
+
+
+async def get_candles(
+    code: str, interval: str = "1d", count: int = 90, before: str | None = None,
+) -> list[dict] | None:
+    raw = await _fetch_raw_candles(code, interval, count, before)
+    if raw is None:
+        return None
+    return [_map_candle(c) for c in raw]
+
+
+async def get_candles_range(code: str, days: int) -> list[dict] | None:
+    pages: list[list[dict]] = []
+    before: str | None = None
+    total = 0
+    while total < days:
+        raw = await _fetch_raw_candles(code, "1d", 200, before)
+        if raw is None:
+            break
+        pages.insert(0, raw)
+        total += len(raw)
+        if len(raw) < 200:
+            break
+        before = raw[0]["timestamp"]
+    if not pages:
+        return None
+    merged = [c for page in pages for c in page]
+    mapped = [_map_candle(c) for c in merged]
+    return mapped[-days:] if len(mapped) > days else mapped

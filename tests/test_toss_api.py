@@ -171,3 +171,67 @@ async def test_get_prices_batches_symbols(monkeypatch):
 @pytest.mark.asyncio
 async def test_get_prices_empty_input_returns_empty_dict():
     assert await toss_api.get_prices([]) == {}
+
+
+@pytest.mark.asyncio
+async def test_get_candles_maps_and_sorts_ascending(monkeypatch):
+    monkeypatch.setattr(toss_api, "_token", "tok")
+    monkeypatch.setattr(toss_api, "_token_expires_at", time.monotonic() + 100)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"result": {"candles": [
+            {"timestamp": "2026-07-08T00:00:00Z", "openPrice": "110", "highPrice": "112",
+             "lowPrice": "108", "closePrice": "111", "volume": "1200", "currency": "KRW"},
+            {"timestamp": "2026-07-07T00:00:00Z", "openPrice": "100", "highPrice": "105",
+             "lowPrice": "95", "closePrice": "100", "volume": "1000", "currency": "KRW"},
+        ], "nextBefore": None}})
+
+    monkeypatch.setattr(toss_api, "_make_client", _mock_client_factory(handler))
+
+    result = await toss_api.get_candles("005930", interval="1d", count=2)
+    assert [c["time"] for c in result] == ["2026-07-07", "2026-07-08"]
+    assert result[0]["close"] == 100
+    assert result[1]["close"] == 111
+    assert result[1]["volume"] == 1200
+
+
+@pytest.mark.asyncio
+async def test_get_candles_returns_none_when_empty(monkeypatch):
+    monkeypatch.setattr(toss_api, "_token", "tok")
+    monkeypatch.setattr(toss_api, "_token_expires_at", time.monotonic() + 100)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"result": {"candles": [], "nextBefore": None}})
+
+    monkeypatch.setattr(toss_api, "_make_client", _mock_client_factory(handler))
+
+    result = await toss_api.get_candles("999999", count=90)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_candles_range_paginates_until_enough_days(monkeypatch):
+    monkeypatch.setattr(toss_api, "_token", "tok")
+    monkeypatch.setattr(toss_api, "_token_expires_at", time.monotonic() + 100)
+
+    def _candle(day: str, price: float) -> dict:
+        return {
+            "timestamp": f"{day}T00:00:00Z", "openPrice": str(price), "highPrice": str(price),
+            "lowPrice": str(price), "closePrice": str(price), "volume": "100", "currency": "KRW",
+        }
+
+    # 1페이지: 최근 200개(정렬 전 내림차순으로 응답한다고 가정), 2페이지: 그 이전 50개(200개 미만 → 마지막 페이지)
+    page1 = [_candle(f"2026-{(200 - i) // 28 + 1:02d}-{(200 - i) % 28 + 1:02d}", 200 - i) for i in range(200)]
+    page2 = [_candle(f"2025-{(50 - i) // 28 + 1:02d}-{(50 - i) % 28 + 1:02d}", 1000 + i) for i in range(50)]
+    pages = iter([page1, page2])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        candles = next(pages)
+        return httpx.Response(200, json={"result": {"candles": candles, "nextBefore": None}})
+
+    monkeypatch.setattr(toss_api, "_make_client", _mock_client_factory(handler))
+
+    result = await toss_api.get_candles_range("005930", days=250)
+    assert len(result) == 250
+    # 오름차순(과거 → 최근)으로 정렬되어 있어야 함
+    assert result[0]["time"] < result[-1]["time"]
