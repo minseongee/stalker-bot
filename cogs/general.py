@@ -539,7 +539,12 @@ class General(commands.Cog):
             except Exception:
                 continue
 
-            info_map = await get_stock_info(watching_codes)
+            try:
+                info_map = await get_stock_info(watching_codes)
+            except Exception as e:
+                print(f"[관심종목알림] {user_id} 종목정보 조회 실패: {e}")
+                continue
+
             names = [info_map.get(c, {}).get("name", c) for c in watching_codes]
             stock_str = ", ".join(f"**{n}**({c})" for n, c in zip(names, watching_codes))
 
