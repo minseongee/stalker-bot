@@ -242,36 +242,33 @@ class ChartResultView(discord.ui.View):
         )
 
 
-# ── 관심 종목 추가 View (Select Menu) ─────────────────────────────────────────
+# ── 관심 종목 추가 모달 ───────────────────────────────────────────────────────
 
-class WatchlistAddView(discord.ui.View):
+class WatchlistAddModal(discord.ui.Modal, title="관심 종목 추가"):
+    code = discord.ui.TextInput(
+        label="종목 코드 (6자리)",
+        placeholder="예: 005930",
+        min_length=6,
+        max_length=6,
+    )
+
     def __init__(self, user_id: str):
-        super().__init__(timeout=120)
+        super().__init__()
         self.user_id = user_id
-        existing = set(get_watchlist(user_id))
-        available = [c for c in DUMMY_STOCKS if c not in existing]
-        if available:
-            options = [
-                discord.SelectOption(
-                    label=f"{DUMMY_STOCKS[c]['name']} ({c})",
-                    value=c,
-                )
-                for c in available
-            ]
-            select = discord.ui.Select(placeholder="추가할 종목을 선택하세요", options=options)
-            select.callback = self._on_select
-            self.add_item(select)
 
-    async def _on_select(self, interaction: discord.Interaction):
-        code = interaction.data["values"][0]
+    async def on_submit(self, interaction: discord.Interaction):
+        code = self.code.value.strip()
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        name = await get_stock_name(code)
+        if not name:
+            await interaction.followup.send(f"❌ `{code}` 종목을 찾을 수 없습니다.", ephemeral=True)
+            return
         add_to_watchlist(self.user_id, code)
-        embed = _build_watchlist_embed(self.user_id)
-        await interaction.response.edit_message(embed=embed, view=WatchlistView(self.user_id))
-
-    @discord.ui.button(label="← 취소", style=discord.ButtonStyle.secondary, row=1)
-    async def cancel(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        embed = _build_watchlist_embed(self.user_id)
-        await interaction.response.edit_message(embed=embed, view=WatchlistView(self.user_id))
+        await interaction.followup.send(
+            f"⭐ **{name}** ({code})을 관심 종목에 추가했습니다!\n"
+            "관심 종목 메뉴에서 🔄 새로고침을 눌러 확인하세요.",
+            ephemeral=True,
+        )
 
 
 # ── 관심 종목 삭제 View (Select Menu) ─────────────────────────────────────────
@@ -337,25 +334,7 @@ class WatchlistView(discord.ui.View):
 
     @discord.ui.button(label="➕ 추가", style=discord.ButtonStyle.success)
     async def add(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        existing = set(get_watchlist(str(interaction.user.id)))
-        if len(existing) >= len(DUMMY_STOCKS):
-            await interaction.response.edit_message(
-                embed=discord.Embed(
-                    title="⭐ 내 관심 종목",
-                    description="지원하는 모든 종목이 이미 관심 목록에 있습니다.",
-                    color=discord.Color.gold(),
-                ),
-                view=WatchlistView(str(interaction.user.id)),
-            )
-            return
-        embed = discord.Embed(
-            title="➕ 관심 종목 추가",
-            description="추가할 종목을 선택하세요.",
-            color=discord.Color.green(),
-        )
-        await interaction.response.edit_message(
-            embed=embed, view=WatchlistAddView(str(interaction.user.id))
-        )
+        await interaction.response.send_modal(WatchlistAddModal(str(interaction.user.id)))
 
     @discord.ui.button(label="➖ 삭제", style=discord.ButtonStyle.danger)
     async def remove(self, interaction: discord.Interaction, _button: discord.ui.Button):
