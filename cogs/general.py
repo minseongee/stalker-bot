@@ -221,8 +221,15 @@ class ChartResultView(discord.ui.View):
         self.add_item(edit_btn)
 
     async def _toggle_watchlist(self, interaction: discord.Interaction):
-        uid  = str(interaction.user.id)
-        name = await get_stock_name(self.stock_code) or self.stock_code
+        uid = str(interaction.user.id)
+        await interaction.response.defer()
+        try:
+            name = await get_stock_name(self.stock_code) or self.stock_code
+        except Exception as e:
+            await interaction.followup.send(
+                f"⚠️ 처리에 실패했습니다.\n```{type(e).__name__}: {e}```", ephemeral=True
+            )
+            return
         if self.stock_code in get_watchlist(uid):
             remove_from_watchlist(uid, self.stock_code)
             msg = f"★ **{name}** ({self.stock_code})을 관심 종목에서 제거했습니다."
@@ -230,7 +237,7 @@ class ChartResultView(discord.ui.View):
             add_to_watchlist(uid, self.stock_code)
             msg = f"⭐ **{name}** ({self.stock_code})을 관심 종목에 추가했습니다!"
         # 버튼 상태 갱신 (embed·첨부 파일은 유지)
-        await interaction.response.edit_message(view=ChartResultView(self.stock_code, uid))
+        await interaction.edit_original_response(view=ChartResultView(self.stock_code, uid))
         await interaction.followup.send(msg, ephemeral=True)
 
     async def _edit_chart(self, interaction: discord.Interaction):
@@ -295,13 +302,29 @@ class WatchlistRemoveView(discord.ui.View):
     async def _on_select(self, interaction: discord.Interaction):
         code = interaction.data["values"][0]
         remove_from_watchlist(self.user_id, code)
-        embed = await _build_watchlist_embed(self.user_id)
-        await interaction.response.edit_message(embed=embed, view=await _make_watchlist_view(self.user_id))
+        await interaction.response.defer()
+        try:
+            embed = await _build_watchlist_embed(self.user_id)
+            view = await _make_watchlist_view(self.user_id)
+        except Exception as e:
+            await interaction.followup.send(
+                f"⚠️ 처리에 실패했습니다.\n```{type(e).__name__}: {e}```", ephemeral=True
+            )
+            return
+        await interaction.edit_original_response(embed=embed, view=view)
 
     @discord.ui.button(label="← 취소", style=discord.ButtonStyle.secondary, row=1)
     async def cancel(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        embed = await _build_watchlist_embed(self.user_id)
-        await interaction.response.edit_message(embed=embed, view=await _make_watchlist_view(self.user_id))
+        await interaction.response.defer()
+        try:
+            embed = await _build_watchlist_embed(self.user_id)
+            view = await _make_watchlist_view(self.user_id)
+        except Exception as e:
+            await interaction.followup.send(
+                f"⚠️ 처리에 실패했습니다.\n```{type(e).__name__}: {e}```", ephemeral=True
+            )
+            return
+        await interaction.edit_original_response(embed=embed, view=view)
 
 
 # ── 관심 종목 메인 View ───────────────────────────────────────────────────────
@@ -341,27 +364,39 @@ class WatchlistView(discord.ui.View):
 
     @discord.ui.button(label="➖ 삭제", style=discord.ButtonStyle.danger)
     async def remove(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await interaction.response.defer()
         codes = get_watchlist(str(interaction.user.id))
-        if not codes:
-            await interaction.response.edit_message(
-                embed=await _build_watchlist_embed(str(interaction.user.id)),
-                view=self,
+        try:
+            if not codes:
+                embed = await _build_watchlist_embed(str(interaction.user.id))
+                await interaction.edit_original_response(embed=embed, view=self)
+                return
+            names = await get_stock_info(codes)
+        except Exception as e:
+            await interaction.followup.send(
+                f"⚠️ 처리에 실패했습니다.\n```{type(e).__name__}: {e}```", ephemeral=True
             )
             return
-        names = await get_stock_info(codes)
         embed = discord.Embed(
             title="➖ 관심 종목 삭제",
             description="삭제할 종목을 선택하세요.",
             color=discord.Color.red(),
         )
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             embed=embed, view=WatchlistRemoveView(str(interaction.user.id), codes, names)
         )
 
     @discord.ui.button(label="🔄 새로고침", style=discord.ButtonStyle.secondary)
     async def refresh(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        embed = await _build_watchlist_embed(str(interaction.user.id))
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.defer()
+        try:
+            embed = await _build_watchlist_embed(str(interaction.user.id))
+        except Exception as e:
+            await interaction.followup.send(
+                f"⚠️ 새로고침에 실패했습니다.\n```{type(e).__name__}: {e}```", ephemeral=True
+            )
+            return
+        await interaction.edit_original_response(embed=embed, view=self)
 
 
 # ── 메인 대시보드 View ────────────────────────────────────────────────────────
@@ -377,10 +412,16 @@ class StockView(discord.ui.View):
     @discord.ui.button(label="관심 종목", style=discord.ButtonStyle.secondary, emoji="⭐", custom_id="stock:watchlist")
     async def watchlist(self, interaction: discord.Interaction, _button: discord.ui.Button):
         uid = str(interaction.user.id)
-        embed = await _build_watchlist_embed(uid)
-        await interaction.response.send_message(
-            embed=embed, view=await _make_watchlist_view(uid), ephemeral=True
-        )
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            embed = await _build_watchlist_embed(uid)
+            view = await _make_watchlist_view(uid)
+        except Exception as e:
+            await interaction.followup.send(
+                f"⚠️ 관심 종목을 불러오는 데 실패했습니다.\n```{type(e).__name__}: {e}```", ephemeral=True
+            )
+            return
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 
 
