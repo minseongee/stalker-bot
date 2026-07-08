@@ -78,3 +78,23 @@ async def _authed_get(path: str, params: dict, retries: int = 2):
                 )
             return resp.json()
     raise TossAPIError(429, "rate-limited", "재시도 초과")
+
+
+def _chunk(items: list[str], size: int = 200) -> list[list[str]]:
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
+async def get_stock_info(codes: list[str]) -> dict[str, dict]:
+    if not codes:
+        return {}
+    to_fetch = [c for c in dict.fromkeys(codes) if c not in _stock_info_cache]
+    for chunk in _chunk(to_fetch):
+        data = await _authed_get("/api/stocks", {"symbols": ",".join(chunk)})
+        for item in data:
+            _stock_info_cache[item["symbol"]] = item
+    return {code: _stock_info_cache[code] for code in codes if code in _stock_info_cache}
+
+
+async def get_stock_name(code: str) -> str | None:
+    info = await get_stock_info([code])
+    return info.get(code, {}).get("name")

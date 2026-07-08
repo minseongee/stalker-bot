@@ -103,3 +103,50 @@ async def test_authed_get_raises_tossapierror_on_4xx(monkeypatch):
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.code == "invalid-request"
+
+
+@pytest.mark.asyncio
+async def test_get_stock_info_returns_known_codes_only(monkeypatch):
+    monkeypatch.setattr(toss_api, "_token", "tok")
+    monkeypatch.setattr(toss_api, "_token_expires_at", time.monotonic() + 100)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["symbols"] == "005930,999999"
+        return httpx.Response(200, json=[{"symbol": "005930", "name": "삼성전자", "market": "KOSPI"}])
+
+    monkeypatch.setattr(toss_api, "_make_client", _mock_client_factory(handler))
+
+    result = await toss_api.get_stock_info(["005930", "999999"])
+    assert result == {"005930": {"symbol": "005930", "name": "삼성전자", "market": "KOSPI"}}
+
+
+@pytest.mark.asyncio
+async def test_get_stock_info_uses_cache_on_second_call(monkeypatch):
+    monkeypatch.setattr(toss_api, "_token", "tok")
+    monkeypatch.setattr(toss_api, "_token_expires_at", time.monotonic() + 100)
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json=[{"symbol": "005930", "name": "삼성전자", "market": "KOSPI"}])
+
+    monkeypatch.setattr(toss_api, "_make_client", _mock_client_factory(handler))
+
+    await toss_api.get_stock_info(["005930"])
+    await toss_api.get_stock_info(["005930"])
+
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_stock_name_returns_none_for_unknown_code(monkeypatch):
+    monkeypatch.setattr(toss_api, "_token", "tok")
+    monkeypatch.setattr(toss_api, "_token_expires_at", time.monotonic() + 100)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])
+
+    monkeypatch.setattr(toss_api, "_make_client", _mock_client_factory(handler))
+
+    name = await toss_api.get_stock_name("999999")
+    assert name is None
