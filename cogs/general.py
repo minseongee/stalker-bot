@@ -263,7 +263,10 @@ class WatchlistAddModal(discord.ui.Modal, title="관심 종목 추가"):
         if not name:
             await interaction.followup.send(f"❌ `{code}` 종목을 찾을 수 없습니다.", ephemeral=True)
             return
-        add_to_watchlist(self.user_id, code)
+        added = add_to_watchlist(self.user_id, code)
+        if not added:
+            await interaction.followup.send(f"⭐ **{name}** ({code})은 이미 관심 종목에 있습니다.", ephemeral=True)
+            return
         await interaction.followup.send(
             f"⭐ **{name}** ({code})을 관심 종목에 추가했습니다!\n"
             "관심 종목 메뉴에서 🔄 새로고침을 눌러 확인하세요.",
