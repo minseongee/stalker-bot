@@ -89,8 +89,8 @@ async def get_stock_info(codes: list[str]) -> dict[str, dict]:
         return {}
     to_fetch = [c for c in dict.fromkeys(codes) if c not in _stock_info_cache]
     for chunk in _chunk(to_fetch):
-        data = await _authed_get("/api/stocks", {"symbols": ",".join(chunk)})
-        for item in data:
+        data = await _authed_get("/api/v1/stocks", {"symbols": ",".join(chunk)})
+        for item in data.get("result", []):
             _stock_info_cache[item["symbol"]] = item
     return {code: _stock_info_cache[code] for code in codes if code in _stock_info_cache}
 
@@ -106,7 +106,7 @@ async def get_prices(codes: list[str]) -> dict[str, dict]:
     result: dict[str, dict] = {}
     for chunk in _chunk(list(dict.fromkeys(codes))):
         data = await _authed_get("/api/v1/prices", {"symbols": ",".join(chunk)})
-        for item in data:
+        for item in data.get("result", []):
             result[item["symbol"]] = {
                 "price": float(item["lastPrice"]),
                 "timestamp": item["timestamp"],

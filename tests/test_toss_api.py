@@ -112,7 +112,7 @@ async def test_get_stock_info_returns_known_codes_only(monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.params["symbols"] == "005930,999999"
-        return httpx.Response(200, json=[{"symbol": "005930", "name": "삼성전자", "market": "KOSPI"}])
+        return httpx.Response(200, json={"result": [{"symbol": "005930", "name": "삼성전자", "market": "KOSPI"}]})
 
     monkeypatch.setattr(toss_api, "_make_client", _mock_client_factory(handler))
 
@@ -128,7 +128,7 @@ async def test_get_stock_info_uses_cache_on_second_call(monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
-        return httpx.Response(200, json=[{"symbol": "005930", "name": "삼성전자", "market": "KOSPI"}])
+        return httpx.Response(200, json={"result": [{"symbol": "005930", "name": "삼성전자", "market": "KOSPI"}]})
 
     monkeypatch.setattr(toss_api, "_make_client", _mock_client_factory(handler))
 
@@ -144,7 +144,7 @@ async def test_get_stock_name_returns_none_for_unknown_code(monkeypatch):
     monkeypatch.setattr(toss_api, "_token_expires_at", time.monotonic() + 100)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=[])
+        return httpx.Response(200, json={"result": []})
 
     monkeypatch.setattr(toss_api, "_make_client", _mock_client_factory(handler))
 
@@ -158,9 +158,9 @@ async def test_get_prices_batches_symbols(monkeypatch):
     monkeypatch.setattr(toss_api, "_token_expires_at", time.monotonic() + 100)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=[
+        return httpx.Response(200, json={"result": [
             {"symbol": "005930", "timestamp": "2026-07-08T09:00:00Z", "lastPrice": "73200", "currency": "KRW"},
-        ])
+        ]})
 
     monkeypatch.setattr(toss_api, "_make_client", _mock_client_factory(handler))
 
