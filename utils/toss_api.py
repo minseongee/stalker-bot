@@ -98,3 +98,17 @@ async def get_stock_info(codes: list[str]) -> dict[str, dict]:
 async def get_stock_name(code: str) -> str | None:
     info = await get_stock_info([code])
     return info.get(code, {}).get("name")
+
+
+async def get_prices(codes: list[str]) -> dict[str, dict]:
+    if not codes:
+        return {}
+    result: dict[str, dict] = {}
+    for chunk in _chunk(list(dict.fromkeys(codes))):
+        data = await _authed_get("/api/v1/prices", {"symbols": ",".join(chunk)})
+        for item in data:
+            result[item["symbol"]] = {
+                "price": float(item["lastPrice"]),
+                "timestamp": item["timestamp"],
+            }
+    return result

@@ -150,3 +150,24 @@ async def test_get_stock_name_returns_none_for_unknown_code(monkeypatch):
 
     name = await toss_api.get_stock_name("999999")
     assert name is None
+
+
+@pytest.mark.asyncio
+async def test_get_prices_batches_symbols(monkeypatch):
+    monkeypatch.setattr(toss_api, "_token", "tok")
+    monkeypatch.setattr(toss_api, "_token_expires_at", time.monotonic() + 100)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[
+            {"symbol": "005930", "timestamp": "2026-07-08T09:00:00Z", "lastPrice": "73200", "currency": "KRW"},
+        ])
+
+    monkeypatch.setattr(toss_api, "_make_client", _mock_client_factory(handler))
+
+    result = await toss_api.get_prices(["005930", "999999"])
+    assert result == {"005930": {"price": 73200.0, "timestamp": "2026-07-08T09:00:00Z"}}
+
+
+@pytest.mark.asyncio
+async def test_get_prices_empty_input_returns_empty_dict():
+    assert await toss_api.get_prices([]) == {}
