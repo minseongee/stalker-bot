@@ -73,6 +73,74 @@ async def summarize_market_briefing(window_hours: int = 6) -> str | None:
         return None
 
 
+_STOCK_DIGEST_PROMPT = """당신은 장기 보유 주주 관점의 한국 주식 애널리스트입니다.
+아래는 한 종목에 대해 최근 발생한 개별 뉴스들이며, 각 뉴스는 이미 호재/악재/중립으로 분류되어 있습니다.
+이 뉴스들을 종합해, 주주 입장에서 이 종목을 지금 어떻게 봐야 하는지 하나의 일관된 관점으로 정리하세요.
+개별 뉴스의 상충되는 관점을 그대로 나열하지 말고, 전체적으로 종합했을 때의 순(net) 판단을 내리세요.
+
+아래 JSON 형식으로만 응답하세요:
+{
+  "net_stance": "positive | negative | mixed | neutral",
+  "net_reason": "순 판단의 근거 (1~2문장)",
+  "key_issues": ["핵심 이슈 1", "핵심 이슈 2", ...]
+}
+
+net_stance 기준:
+- positive: 종합적으로 호재가 우세
+- negative: 종합적으로 악재가 우세
+- mixed: 호재와 악재가 팽팽하거나 서로 다른 성격의 이슈가 혼재
+- neutral: 대부분 중립적 뉴스뿐이거나 주가에 미치는 영향이 불분명
+key_issues는 최대 4개, 각 10~25자 내외로 간결하게 작성하세요."""
+
+
+async def summarize_stock_digest(name: str, code: str, items: list[dict], counts: dict) -> dict | None:
+    """종목 하나에 대해 쌓인 여러 핫뉴스를 GPT로 종합해 주주 관점의 순(net) 판단 반환."""
+    if not items:
+        return None
+
+    def _dir_label(d: str) -> str:
+        return "호재" if d == "positive" else ("악재" if d == "negative" else "중립")
+
+    lines = [
+        f"- [{_dir_label(it.get('direction') or 'neutral')}] "
+        f"{it.get('headline') or it.get('title') or ''}: {it.get('summary') or ''}"
+        for it in items
+    ]
+    articles = "\n".join(lines)
+    user_msg = (
+        f"종목: {name}({code})\n"
+        f"집계: 호재 {counts.get('positive', 0)}건 · 악재 {counts.get('negative', 0)}건 · "
+        f"중립 {counts.get('neutral', 0)}건\n\n"
+        f"개별 뉴스 목록:\n{articles}"
+    )
+
+    print(f"[다이제스트] {name}({code}) GPT 종합 요청 중… (뉴스 {len(items)}건)")
+    try:
+        resp = await get_openai_client().responses.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-5.4-mini"),
+            input=[
+                {"role": "system", "content": _STOCK_DIGEST_PROMPT},
+                {"role": "user",   "content": user_msg},
+            ],
+            store=False,
+        )
+        raw = resp.output_text.strip()
+        if "```" in raw:
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        result = json.loads(raw)
+    except Exception as e:
+        print(f"[다이제스트] {name}({code}) GPT 호출 실패: {e}")
+        return None
+
+    return {
+        "net_stance": result.get("net_stance", "neutral"),
+        "net_reason": result.get("net_reason", ""),
+        "key_issues": result.get("key_issues", []),
+    }
+
+
 def _build_hot_news_embeds() -> list[dict]:
     """핫뉴스 목록을 embed 데이터 리스트로 반환 (cogs/general.py에서 사용)."""
     rows = get_hot_news(limit=10)

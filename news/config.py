@@ -94,3 +94,9 @@ STOCK_PRICE_BONUS: float = 15.0   # 2개 이상 등장 시 추가 보너스
 # 매체 수에 따른 가산 (클러스터 소스 수 × 이 값)
 SOURCE_COUNT_WEIGHT: float = 10.0
 SOURCE_COUNT_CAP: float = 30.0   # 최대 가산 한도
+
+# ── 관심종목 즉시 DM 임계값 ────────────────────────────────────────────────────
+# hot_score가 이 값 이상이거나, DART 공시 중 WATCHLIST_CRITICAL_KEYWORDS를 포함하면
+# 관심종목 유저에게 즉시 DM. 그 외 핫뉴스는 개별 DM 대신 다이제스트(08/12/16/21시)로 종합 전달한다.
+WATCHLIST_INSTANT_THRESHOLD: float = float(os.getenv("WATCHLIST_INSTANT_THRESHOLD", "88"))
+WATCHLIST_CRITICAL_KEYWORDS: list[str] = ["상장폐지", "영업정지", "관리종목", "파산", "부도", "횡령", "배임"]

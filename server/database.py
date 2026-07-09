@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import time
@@ -123,6 +124,21 @@ CREATE TABLE IF NOT EXISTS hot_news_alerts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_hot_news_alerts_user ON hot_news_alerts (user_id, fired_at);
+
+CREATE TABLE IF NOT EXISTS stock_digests (
+    code         TEXT    NOT NULL,
+    window_key   TEXT    NOT NULL,  -- 예: '2026-07-09-16' (날짜-시각, 재실행 시 idempotent 갱신용)
+    name         TEXT    NOT NULL,
+    counts_json  TEXT    NOT NULL,  -- {"positive":N, "negative":N, "neutral":N}
+    net_stance   TEXT    NOT NULL DEFAULT 'neutral',
+    net_reason   TEXT,
+    body_json    TEXT    NOT NULL DEFAULT '[]',  -- key_issues 리스트
+    sources_json TEXT    NOT NULL DEFAULT '[]',
+    created_at   INTEGER NOT NULL,
+    PRIMARY KEY (code, window_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_stock_digests_code ON stock_digests (code, created_at);
 """
 
 
@@ -367,6 +383,18 @@ def get_users_watching(stock_codes: list[str]) -> dict[str, list[str]]:
     return result
 
 
+def get_all_watchlists() -> dict[str, list[str]]:
+    """전 유저의 관심종목 매핑 반환: {user_id: [stock_code, ...]}. 다이제스트 팬아웃에 사용."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT user_id, stock_code FROM watchlist ORDER BY user_id, added_at"
+        ).fetchall()
+    result: dict[str, list[str]] = {}
+    for r in rows:
+        result.setdefault(r["user_id"], []).append(r["stock_code"])
+    return result
+
+
 # ── alerts ───────────────────────────────────────────────────────────────────
 
 ALERT_COOLDOWN = 3600  # 1시간
@@ -466,6 +494,31 @@ def get_hot_news_by_score(threshold: float, limit: int = 20) -> list[dict]:
             (threshold, limit),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_hot_news_for_codes_since(codes: list[str], since_ts: int) -> list[dict]:
+    """codes 중 하나라도 stock_tags에 포함된, since_ts 이후 정제된 핫뉴스 반환.
+    관심종목별 다이제스트 집계에 사용 (news_items.stock_tags는 "코드:이름" JSON 배열)."""
+    if not codes:
+        return []
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT * FROM news_items
+               WHERE summary IS NOT NULL AND stock_tags IS NOT NULL AND fetched_at >= ?
+               ORDER BY fetched_at ASC""",
+            (since_ts,),
+        ).fetchall()
+    code_set = set(codes)
+    result: list[dict] = []
+    for r in rows:
+        try:
+            tags = json.loads(r["stock_tags"])
+        except Exception:
+            continue
+        tag_codes = {t.split(":")[0] for t in tags if ":" in t}
+        if tag_codes & code_set:
+            result.append(dict(r))
+    return result
 
 
 def get_latest_hot_news_time() -> int | None:
@@ -604,6 +657,68 @@ def set_setting(key: str, value: str) -> None:
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)",
             (key, value),
         )
+
+
+# ── stock_digests ────────────────────────────────────────────────────────────
+
+def upsert_stock_digest(window_key: str, card: dict) -> None:
+    """종목별 종합 다이제스트 카드 저장. (code, window_key) 복합키라 같은 주기 재실행 시 idempotent."""
+    with _conn() as conn:
+        conn.execute(
+            """INSERT INTO stock_digests
+               (code, window_key, name, counts_json, net_stance, net_reason,
+                body_json, sources_json, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)
+               ON CONFLICT(code, window_key) DO UPDATE SET
+                 name=excluded.name,
+                 counts_json=excluded.counts_json,
+                 net_stance=excluded.net_stance,
+                 net_reason=excluded.net_reason,
+                 body_json=excluded.body_json,
+                 sources_json=excluded.sources_json,
+                 created_at=excluded.created_at""",
+            (
+                card["code"], window_key, card["name"],
+                json.dumps(card.get("counts", {}), ensure_ascii=False),
+                card.get("net_stance", "neutral"),
+                card.get("net_reason", ""),
+                json.dumps(card.get("key_issues", []), ensure_ascii=False),
+                json.dumps(card.get("sources", []), ensure_ascii=False),
+                int(time.time()),
+            ),
+        )
+
+
+def get_latest_stock_digests(codes: list[str]) -> list[dict]:
+    """codes 각각의 가장 최근 다이제스트 카드 반환 (아직 생성 안 된 종목은 제외).
+    window_key와 무관하게 최신 1건만 — 웹 대시보드가 언제 열어도 가장 최근 종합을 보여주기 위함."""
+    if not codes:
+        return []
+    placeholders = ",".join("?" * len(codes))
+    with _conn() as conn:
+        rows = conn.execute(
+            f"""SELECT * FROM stock_digests
+                WHERE code IN ({placeholders})
+                ORDER BY code, created_at DESC""",
+            codes,
+        ).fetchall()
+    seen: set[str] = set()
+    result: list[dict] = []
+    for r in rows:
+        if r["code"] in seen:
+            continue
+        seen.add(r["code"])
+        result.append({
+            "code":       r["code"],
+            "name":       r["name"],
+            "counts":     json.loads(r["counts_json"]),
+            "net_stance": r["net_stance"],
+            "net_reason": r["net_reason"],
+            "key_issues": json.loads(r["body_json"]),
+            "sources":    json.loads(r["sources_json"]),
+            "created_at": r["created_at"],
+        })
+    return result
 
 
 # ── admin stats ───────────────────────────────────────────────────────────────

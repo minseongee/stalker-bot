@@ -29,6 +29,7 @@ from .database import (
     get_all_settings,
     get_channels,
     get_hot_news_by_score,
+    get_latest_stock_digests,
     get_live_setting,
     get_recent_news_items,
     get_user_detail,
@@ -362,6 +363,26 @@ def alert_history_page(request: Request):
     if not user:
         return RedirectResponse("/login", status_code=303)
     return FileResponse(_STATIC / "alert-history.html")
+
+
+@app.get("/watchlist-digest")
+def watchlist_digest_page(request: Request):
+    user = request.session.get("user")
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    return FileResponse(_STATIC / "watchlist-digest.html")
+
+
+@app.get("/api/me/watchlist/digest")
+def api_me_watchlist_digest(request: Request):
+    """관심 종목별 가장 최근 종합 다이제스트 카드 반환 (08/12/16/21시마다 갱신)."""
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    codes = get_watchlist(user["id"])
+    if not codes:
+        return []
+    return get_latest_stock_digests(codes)
 
 
 @app.post("/api/me/watchlist/{code}")

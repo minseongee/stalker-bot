@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>뉴스 다이제스트 — Stalker Bot</title>
+  <style>
+    main { max-width:720px; margin:32px auto; padding:0 24px; }
+    .page-title { font-size:1.1rem; font-weight:700; color:#fff; margin-bottom:6px; }
+    .page-desc { font-size:0.8rem; color:#666; margin-bottom:20px; }
+    .card {
+      background:#16213e; border:1px solid #1e3a5f; border-radius:12px;
+      padding:16px 18px; margin-bottom:12px;
+    }
+    .card-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; gap:10px; }
+    .card-name { font-size:0.95rem; font-weight:700; color:#fff; }
+    .card-code { font-size:0.75rem; color:#555; font-family:monospace; margin-left:6px; }
+    .stance {
+      font-size:0.78rem; font-weight:700; padding:3px 10px; border-radius:20px; white-space:nowrap;
+    }
+    .stance-positive { background:#14532d; color:#4ade80; }
+    .stance-negative { background:#7f1d1d; color:#f87171; }
+    .stance-mixed    { background:#78350f; color:#fbbf24; }
+    .stance-neutral  { background:#1a1d27; color:#999; }
+    .counts { font-size:0.8rem; color:#aaa; margin-bottom:8px; }
+    .reason { font-size:0.85rem; color:#ddd; margin-bottom:10px; line-height:1.5; }
+    .issues { font-size:0.8rem; color:#999; padding-left:18px; }
+    .issues li { margin-bottom:3px; }
+    .updated { font-size:0.72rem; color:#444; margin-top:10px; }
+    .empty { text-align:center; padding:60px; color:#555; }
+    .empty p { margin-bottom:6px; font-size:0.9rem; }
+    .empty small { font-size:0.8rem; }
+    .loading { text-align:center; padding:48px; color:#555; }
+  </style>
+</head>
+<body data-page="digest">
+<main>
+  <div class="page-title">🗞️ 관심 종목 뉴스 다이제스트</div>
+  <div class="page-desc">관심 종목별로 최근 뉴스를 종합한 순(net) 판단입니다. 매일 08·12·16·21시(KST)에 갱신됩니다.</div>
+  <div id="list-wrap"><div class="loading">불러오는 중…</div></div>
+</main>
+<script src="/static/sidebar.js"></script>
+<script>
+const STANCE_LABEL = { positive: '📈 호재 우세', negative: '📉 악재 우세', mixed: '⚖️ 혼조', neutral: '📌 중립' };
+
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function fmt(ts) {
+  if (!ts) return '-';
+  return new Date(ts * 1000).toLocaleString('ko-KR', {
+    month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false
+  });
+}
+
+async function load() {
+  const res = await fetch('/api/me/watchlist/digest');
+  if (!res.ok) { location.href = '/login'; return; }
+  const cards = await res.json();
+  const wrap = document.getElementById('list-wrap');
+
+  if (!cards.length) {
+    wrap.innerHTML = `<div class="empty">
+      <p>아직 종합된 다이제스트가 없습니다.</p>
+      <small>관심 종목에 핫뉴스가 쌓이면 다음 주기(08·12·16·21시)에 생성됩니다.</small>
+    </div>`;
+    return;
+  }
+
+  wrap.innerHTML = cards.map(c => {
+    const stance = c.net_stance || 'neutral';
+    const counts = c.counts || {};
+    const issues = (c.key_issues || []).map(i => `<li>${escHtml(i)}</li>`).join('');
+    return `<div class="card">
+      <div class="card-head">
+        <div><span class="card-name">${escHtml(c.name)}</span><span class="card-code">${escHtml(c.code)}</span></div>
+        <span class="stance stance-${escHtml(stance)}">${STANCE_LABEL[stance] || '📌 중립'}</span>
+      </div>
+      <div class="counts">📈 호재 ${counts.positive||0} · 📉 악재 ${counts.negative||0} · 📌 중립 ${counts.neutral||0}</div>
+      <div class="reason">${escHtml(c.net_reason)}</div>
+      ${issues ? `<ul class="issues">${issues}</ul>` : ''}
+      <div class="updated">갱신: ${fmt(c.created_at)}</div>
+    </div>`;
+  }).join('');
+}
+
+load();
+</script>
+</body>
+</html>

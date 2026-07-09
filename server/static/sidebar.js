@@ -3,14 +3,15 @@
  * 각 페이지에서 <script src="/static/sidebar.js"></script> 한 줄만 추가하면 됩니다.
  *
  * 페이지 body에 data-page="key" 속성을 지정하면 해당 nav 항목이 활성화됩니다.
- *   data-page="home" | "chart" | "watchlist" | "alerts"
+ *   data-page="home" | "chart" | "watchlist" | "digest" | "alerts"
  */
 
 const NAV = [
-  { key: 'home',      href: '/dashboard',     icon: '🏠', label: '홈' },
-  { key: 'chart',     href: '/chart-editor',  icon: '✏️', label: '차트 수정' },
-  { key: 'watchlist', href: '/watchlist',     icon: '⭐', label: '관심 종목' },
-  { key: 'alerts',    href: '/alert-history', icon: '🔔', label: '알림 내역' },
+  { key: 'home',      href: '/dashboard',        icon: '🏠', label: '홈' },
+  { key: 'chart',     href: '/chart-editor',     icon: '✏️', label: '차트 수정' },
+  { key: 'watchlist', href: '/watchlist',        icon: '⭐', label: '관심 종목' },
+  { key: 'digest',    href: '/watchlist-digest', icon: '🗞️', label: '뉴스 다이제스트' },
+  { key: 'alerts',    href: '/alert-history',    icon: '🔔', label: '알림 내역' },
 ];
 
 const CSS = `

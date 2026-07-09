@@ -21,8 +21,11 @@ from server.database import (
     set_news_channel, get_news_channels_by_type,
     save_message_id, get_message_id, get_broadcast_cluster_ids,
     get_live_setting, set_setting, get_users_watching, save_hot_news_alert,
+    get_all_watchlists,
 )
 from server.ohlcv import gen_ohlcv
+from news.config import WATCHLIST_INSTANT_THRESHOLD, WATCHLIST_CRITICAL_KEYWORDS
+from news.digest import build_stock_digest_cards
 
 
 SERVER_URL    = os.getenv("SERVER_URL", "http://localhost:8000")
@@ -31,6 +34,7 @@ DASHBOARD_URL = os.getenv("EDITOR_BASE_URL", SERVER_URL)
 _NEWS_HOURS: list[int] = [8, 12, 16, 21]  # KST 브리핑 시각 (정각)
 
 _briefing_fired: set[tuple] = set()  # (date, hour) — 당일 이미 실행된 시각 추적
+_digest_fired: set[tuple] = set()    # (date, hour) — 당일 이미 실행된 다이제스트 시각 추적
 
 _last_broadcast_cluster_ids: set[str] = set()  # 중복 브로드캐스트 방지
 _sent_messages: dict[str, dict[str, int]] = {}  # cluster_id → {channel_id: message_id}
@@ -141,6 +145,44 @@ def _build_hot_embed(news: dict) -> discord.Embed:
         ts = get_cache_time_kst() or '-'
     embed.set_footer(text=f'수집 시각: {ts}')
     return embed
+
+
+_DIGEST_STANCE_LABEL = {
+    "positive": "📈 호재 우세",
+    "negative": "📉 악재 우세",
+    "mixed":    "⚖️ 혼조",
+    "neutral":  "📌 중립",
+}
+
+
+def _build_digest_embed(cards: list[dict], now: datetime.datetime) -> discord.Embed:
+    """관심종목별 종합 다이제스트 카드 리스트를 하나의 DM embed로 조립."""
+    embed = discord.Embed(
+        title="🗞️ 관심 종목 뉴스 다이제스트",
+        description="지난 주기 동안 쌓인 관심 종목 뉴스를 종목별로 종합했습니다.",
+        color=discord.Color.gold(),
+    )
+    for c in cards:
+        counts = c.get("counts", {})
+        stance = _DIGEST_STANCE_LABEL.get(c.get("net_stance"), "📌 중립")
+        issues = "\n".join(f"· {i}" for i in c.get("key_issues", [])) or "-"
+        value = (
+            f"📈{counts.get('positive', 0)} 📉{counts.get('negative', 0)} 📌{counts.get('neutral', 0)}"
+            f"  ·  **{stance}**\n{c.get('net_reason', '')}\n{issues}"
+        )
+        embed.add_field(name=f"{c['name']} ({c['code']})", value=value, inline=False)
+    embed.set_footer(text=f"Stalker Bot · 다이제스트 생성 {now.strftime('%Y-%m-%d %H:%M KST')}")
+    return embed
+
+
+def _prev_scheduled_ts(now: datetime.datetime, hour: int) -> int:
+    """_NEWS_HOURS 기준 직전 스케줄 시각(epoch)을 반환 — 다이제스트 집계 시작점(since_ts)."""
+    idx = _NEWS_HOURS.index(hour)
+    prev_hour = _NEWS_HOURS[idx - 1]  # idx 0이면 파이썬 음수 인덱싱으로 마지막 시각(전날 밤) 사용
+    prev_dt = now.replace(hour=prev_hour, minute=0, second=0, microsecond=0)
+    if prev_hour >= hour:  # 자정을 넘어 전날로 감싼 경우
+        prev_dt -= datetime.timedelta(days=1)
+    return int(prev_dt.timestamp())
 
 
 # ── 차트 전송 헬퍼 ────────────────────────────────────────────────────────────
@@ -439,12 +481,15 @@ class General(commands.Cog):
         print(f"[뉴스] hot news 콜백 등록 완료 (기존 broadcast {len(_last_broadcast_cluster_ids)}건 로드)")
         self.daily_briefing.start()
         self.force_briefing_check.start()
+        self.watchlist_digest.start()
         next_hours = ", ".join(f"{h:02d}:00" for h in _NEWS_HOURS)
         print(f"[브리핑] 브리핑 스케줄: {next_hours} KST")
+        print(f"[다이제스트] 관심종목 다이제스트 스케줄: {next_hours} KST")
 
     def cog_unload(self):
         self.daily_briefing.cancel()
         self.force_briefing_check.cancel()
+        self.watchlist_digest.cancel()
 
     @tasks.loop(seconds=30)
     async def daily_briefing(self):
@@ -541,8 +586,79 @@ class General(commands.Cog):
     async def before_force_briefing_check(self):
         await self.bot.wait_until_ready()
 
+    @tasks.loop(seconds=30)
+    async def watchlist_digest(self):
+        """관심종목 뉴스 종합 다이제스트 — 브리핑과 같은 시각(08/12/16/21시 KST)에 발화.
+
+        직전 주기 동안 쌓인 관심종목별 핫뉴스(호재/악재/중립 파편)를 종목 단위로 종합해
+        DM으로 한 번에 전달한다. 즉시 DM(_notify_watchlist)에서 걸러진 '중요건 아닌' 뉴스가
+        여기서 종합된다.
+        """
+        global _digest_fired
+        now = datetime.datetime.now(tz=_KST)
+        today = now.date()
+        _digest_fired = {k for k in _digest_fired if k[0] == today}
+
+        for hour in _NEWS_HOURS:
+            key = (today, hour)
+            if key in _digest_fired:
+                continue
+            sched = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+            delta = (now - sched).total_seconds()
+            if not (0 <= delta <= 300):
+                continue
+
+            _digest_fired.add(key)
+            now_str = now.strftime('%Y-%m-%d %H:%M KST')
+            print(f"[다이제스트] 스케줄 실행 시작 ({now_str}, 예정 {hour:02d}:00)")
+            try:
+                since_ts   = _prev_scheduled_ts(now, hour)
+                window_key = f"{today.isoformat()}-{hour:02d}"
+                cards = await build_stock_digest_cards(since_ts, window_key)
+                if not cards:
+                    print("[다이제스트] 종합할 관심종목 뉴스 없음, 건너뜀")
+                    return
+
+                card_map   = {c["code"]: c for c in cards}
+                watchlists = get_all_watchlists()
+                sent = 0
+                for user_id, codes in watchlists.items():
+                    my_cards = [card_map[c] for c in codes if c in card_map]
+                    if not my_cards:
+                        continue
+                    try:
+                        user = await self.bot.fetch_user(int(user_id))
+                        await user.send(embed=_build_digest_embed(my_cards, now))
+                        sent += 1
+                    except discord.Forbidden:
+                        pass  # DM 차단한 유저
+                    except Exception as e:
+                        print(f"[다이제스트] {user_id} 전송 실패: {e}")
+                print(f"[다이제스트] 완료 — 종목 {len(cards)}건 종합, 유저 {sent}명 전송")
+            except Exception:
+                print("[다이제스트] watchlist_digest 오류:")
+                traceback.print_exc()
+            return  # 한 번에 하나의 시각만 처리
+
+    @watchlist_digest.before_loop
+    async def before_watchlist_digest(self):
+        await self.bot.wait_until_ready()
+
     async def _notify_watchlist(self, news: dict) -> None:
-        """핫뉴스의 stock_tags와 관심 종목 교집합이 있는 유저에게 DM 전송."""
+        """핫뉴스의 stock_tags와 관심 종목 교집합이 있는 유저에게 즉시 DM 전송.
+
+        모든 핫뉴스를 건건이 즉시 DM하면 인기 종목은 호재/악재/중립이 파편적으로 쏟아져
+        주주 입장에서 혼란스럽다. 그래서 '매우 중요한 건'만 즉시 DM하고, 나머지는
+        watchlist_digest 다이제스트(08/12/16/21시)로 종목 단위 종합 판단을 전달한다.
+        """
+        hot_score = float(news.get("hot_score", 0))
+        is_dart_critical = (
+            any(s.get("source") == "DART" for s in news.get("sources", []))
+            and any(kw in news.get("headline", "") for kw in WATCHLIST_CRITICAL_KEYWORDS)
+        )
+        if hot_score < WATCHLIST_INSTANT_THRESHOLD and not is_dart_critical:
+            return  # 즉시 DM 대상 아님 — 다이제스트에서 종합 전달됨
+
         tags = news.get("stock_tags", [])
         # "005930:삼성전자" → "005930", 코드 없는 섹터명은 제외
         codes = [t.split(":")[0] for t in tags if ":" in t]
