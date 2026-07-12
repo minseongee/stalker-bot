@@ -206,7 +206,7 @@ async def _send_chart(interaction: discord.Interaction, code: str) -> None:
     buf, info = result
     sign  = "▲" if info["change"] >= 0 else "▼"
     color = discord.Color.red() if info["change"] >= 0 else discord.Color.blue()
-    embed = discord.Embed(title=f"📊 {info['name']} ({info['code']})", color=color)
+    embed = discord.Embed(title=f"📊 {info['name']} ({info['code']}, 1h)", color=color)
     embed.add_field(
         name="현재가",
         value=f"**{info['close']:,}원** {sign} {info['change']:+,}원 ({info['change_pct']:+.2f}%)",
